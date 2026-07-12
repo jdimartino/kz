@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TucanApp POS – Mockup</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --blue: #3B82F6;
+            --blue-dark: #1D4ED8;
+            --orange: #F97316;
+            --bg: #0F172A;
+            --surface: #1E293B;
+            --surface2: #273549;
+            --card: #1E293B;
+            --text: #F1F5F9;
+            --muted: #94A3B8;
+            --green: #22C55E;
+            --radius: 20px;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            padding: 40px 20px;
+            gap: 32px;
+            flex-wrap: wrap;
+        }
+
+        /* ── PHONE FRAME ───────────────────────────── */
+        .phone-wrap {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .phone-label {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .phone {
+            width: 375px;
+            min-height: 780px;
+            background: var(--bg);
+            border-radius: 40px;
+            border: 2px solid #334155;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px #0F172A;
+        }
+
+        /* ── SCREEN POS (Cajero) ─────────────────── */
+        .screen {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .screen.active {
+            display: flex;
+        }
+
+        /* Status bar */
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 20px 0;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--muted);
+        }
+
+        .online-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--green);
+            display: inline-block;
+            margin-right: 4px;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 20px 0;
+        }
+
+        .header-title {
+            font-size: 22px;
+            font-weight: 800;
+        }
+
+        .header-title span {
+            color: var(--blue);
+        }
+
+        .header-right {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--blue), var(--orange));
+            font-size: 14px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            background: var(--surface2);
+            color: var(--text);
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Session pill */
+        .session-pill {
+            margin: 10px 20px;
+            background: linear-gradient(135deg, #1e3a5f, #1D4ED8);
+            border-radius: 14px;
+            padding: 10px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .session-pill .label {
+            font-size: 11px;
+            color: #93C5FD;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .session-pill .rate {
+            font-size: 18px;
+            font-weight: 800;
+        }
+
+        .session-pill .rate span {
+            font-size: 12px;
+            font-weight: 500;
+            color: #93C5FD;
+        }
+
+        .session-pill .status-badge {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--green);
+            font-size: 10px;
+            font-weight: 700;
+            border-radius: 20px;
+            padding: 4px 10px;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+
+        /* Category ribbon */
+        .categories {
+            display: flex;
+            gap: 8px;
+            padding: 12px 20px;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+
+        .categories::-webkit-scrollbar {
+            display: none;
+        }
+
+        .cat-btn {
+            flex-shrink: 0;
+            border: none;
+            cursor: pointer;
+            border-radius: 20px;
+            padding: 7px 16px;
+            font-size: 12px;
+            font-weight: 700;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            transition: all .2s;
+        }
+
+        .cat-btn.active {
+            background: var(--blue);
+            color: #fff;
+        }
+
+        .cat-btn:not(.active) {
+            background: var(--surface2);
+            color: var(--muted);
+        }
+
+        /* Products grid */
+        .products-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            padding: 0 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .product-card {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 14px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all .2s;
+            position: relative;
+        }
+
+        .product-card:hover {
+            border-color: var(--blue);
+            transform: translateY(-2px);
+        }
+
+        .product-card.in-cart {
+            border-color: var(--blue);
+            background: #1a2d4a;
+        }
+
+        .prod-emoji {
+            font-size: 32px;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .prod-name {
+            font-size: 13px;
+            font-weight: 700;
+            line-height: 1.3;
+            margin-bottom: 4px;
+        }
+
+        .prod-price {
+            font-size: 15px;
+            font-weight: 800;
+            color: var(--blue);
+        }
+
+        .prod-bs {
+            font-size: 10px;
+            color: var(--muted);
+            margin-top: 2px;
+        }
+
+        .add-btn {
+            position: absolute;
+            bottom: 12px;
+            right: 12px;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            background: var(--blue);
+            color: #fff;
+            font-size: 16px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform .15s;
+        }
+
+        .add-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .cart-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: var(--orange);
+            color: #fff;
+            font-size: 10px;
+            font-weight: 800;
+            border-radius: 20px;
+            padding: 2px 7px;
+        }
+
+        /* Bottom ticket bar */
+        .ticket-bar {
+            margin: 12px 20px 20px;
+            background: linear-gradient(135deg, var(--blue-dark), var(--blue));
+            border-radius: 22px;
+            padding: 14px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            transition: transform .15s;
+        }
+
+        .ticket-bar:hover {
+            transform: scale(1.01);
+        }
+
+        .ticket-bar .left .count {
+            font-size: 11px;
+            font-weight: 600;
+            color: #BFDBFE;
+        }
+
+        .ticket-bar .left .total {
+            font-size: 20px;
+            font-weight: 800;
+        }
+
+        .ticket-bar .left .total-bs {
+            font-size: 11px;
+            color: #BFDBFE;
+        }
+
+        .checkout-chip {
+            background: #fff;
+            color: var(--blue-dark);
+            font-size: 12px;
+            font-weight: 800;
+            border-radius: 14px;
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* ── SCREEN: TICKET (Pago) ────────────────── */
+        .ticket-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 20px 12px;
+        }
+
+        .back-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--surface2);
+            border: none;
+            cursor: pointer;
+            color: var(--text);
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .ticket-header h2 {
+            font-size: 18px;
+            font-weight: 800;
+        }
+
+        .client-card {
+            margin: 0 20px 12px;
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 14px;
+        }
+
+        .client-card label {
+            font-size: 11px;
+            color: var(--muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        .client-card .client-name {
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .client-card .client-phone {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .order-items {
+            padding: 0 20px;
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .order-item {
+            background: var(--surface);
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+        }
+
+        .item-emoji {
+            font-size: 22px;
+        }
+
+        .item-info {
+            flex: 1;
+        }
+
+        .item-info .name {
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .item-info .qty {
+            font-size: 11px;
+            color: var(--muted);
+        }
+
+        .item-price {
+            font-size: 14px;
+            font-weight: 800;
+            color: var(--blue);
+        }
+
+        .totals-card {
+            margin: 12px 20px;
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 16px;
+        }
+
+        .totals-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        .totals-row.big {
+            font-size: 16px;
+            font-weight: 800;
+            border-top: 1px solid #334155;
+            padding-top: 10px;
+            margin-top: 4px;
+        }
+
+        .totals-row .muted {
+            color: var(--muted);
+        }
+
+        .payment-methods {
+            margin: 0 20px 8px;
+        }
+
+        .payment-methods label {
+            font-size: 11px;
+            color: var(--muted);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .methods-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .method-btn {
+            background: var(--surface2);
+            border: 1.5px solid transparent;
+            border-radius: 14px;
+            padding: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 12px;
+            font-weight: 700;
+            transition: all .2s;
+        }
+
+        .method-btn.selected {
+            border-color: var(--blue);
+            background: #1a2d4a;
+        }
+
+        .method-btn .icon {
+            font-size: 18px;
+        }
+
+        .pay-btn {
+            margin: 0 20px 20px;
+            background: linear-gradient(135deg, var(--blue-dark), var(--blue));
+            border: none;
+            border-radius: 22px;
+            padding: 16px;
+            color: #fff;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 15px;
+            font-weight: 800;
+            width: calc(100% - 40px);
+            cursor: pointer;
+            transition: transform .15s;
+        }
+
+        .pay-btn:hover {
+            transform: scale(1.02);
+        }
+
+        /* ── SCREEN: SUCCESS ─────────────────────── */
+        .success-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 16px;
+            padding: 40px 30px;
+            text-align: center;
+        }
+
+        .success-icon {
+            width: 90px;
+            height: 90px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(34, 197, 94, 0.1));
+            border: 2px solid rgba(34, 197, 94, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            animation: pop .4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes pop {
+            from {
+                transform: scale(0);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .success-screen h2 {
+            font-size: 24px;
+            font-weight: 800;
+        }
+
+        .success-screen p {
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .receipt-card {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 20px;
+            width: 100%;
+            text-align: left;
+        }
+
+        .receipt-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        .receipt-row:last-child {
+            margin-bottom: 0;
+            font-weight: 700;
+        }
+
+        .new-order-btn {
+            background: var(--surface2);
+            border: none;
+            border-radius: 22px;
+            padding: 14px;
+            color: var(--text);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            width: 100%;
+            cursor: pointer;
+        }
+
+        /* ── SCREEN: ADMIN (Backoffice) ──────────── */
+        .admin-header {
+            background: linear-gradient(135deg, #1D4ED8, #7C3AED);
+            padding: 20px;
+            border-radius: 0 0 28px 28px;
+            margin-bottom: 16px;
+        }
+
+        .admin-header h2 {
+            font-size: 20px;
+            font-weight: 800;
+            margin-bottom: 4px;
+        }
+
+        .admin-header p {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .admin-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 14px;
+        }
+
+        .stat-chip {
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 14px;
+            padding: 10px 12px;
+        }
+
+        .stat-chip .val {
+            font-size: 18px;
+            font-weight: 800;
+        }
+
+        .stat-chip .key {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.65);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 2px;
+        }
+
+        .admin-section {
+            padding: 0 20px;
+            margin-bottom: 14px;
+        }
+
+        .admin-section h3 {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 10px;
+        }
+
+        .menu-item-row {
+            background: var(--surface);
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            margin-bottom: 8px;
+        }
+
+        .menu-item-row .emoji {
+            font-size: 24px;
+        }
+
+        .menu-item-row .info {
+            flex: 1;
+        }
+
+        .menu-item-row .info .name {
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .menu-item-row .info .tag {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--muted);
+        }
+
+        .menu-item-row .price-col {
+            text-align: right;
+        }
+
+        .menu-item-row .price-col .price {
+            font-size: 14px;
+            font-weight: 800;
+            color: var(--blue);
+        }
+
+        .menu-item-row .price-col .avail {
+            font-size: 10px;
+            color: var(--green);
+            font-weight: 600;
+        }
+
+        /* Bottom Nav */
+        .bottom-nav {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            background: var(--surface);
+            border-radius: 0;
+            padding: 12px 0 16px;
+            border-top: 1px solid #334155;
+            margin-top: auto;
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+            transition: color .2s;
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--muted);
+            background: none;
+            border: none;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        .nav-item.active {
+            color: var(--blue);
+        }
+
+        .nav-item .nav-icon {
+            font-size: 20px;
+        }
+
+        /* ── SIDE PANEL: proposal summary ────────── */
+        .side-panel {
+            width: 320px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            padding-top: 20px;
+        }
+
+        .panel-card {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 20px;
+        }
+
+        .panel-card h3 {
+            font-size: 13px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--muted);
+            margin-bottom: 12px;
+        }
+
+        .badge-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .badge {
+            font-size: 11px;
+            font-weight: 700;
+            border-radius: 20px;
+            padding: 5px 12px;
+        }
+
+        .badge.blue {
+            background: rgba(59, 130, 246, 0.2);
+            color: #60A5FA;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        .badge.orange {
+            background: rgba(249, 115, 22, 0.2);
+            color: #FB923C;
+            border: 1px solid rgba(249, 115, 22, 0.3);
+        }
+
+        .badge.green {
+            background: rgba(34, 197, 94, 0.2);
+            color: #4ADE80;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+
+        .badge.purple {
+            background: rgba(139, 92, 246, 0.2);
+            color: #A78BFA;
+            border: 1px solid rgba(139, 92, 246, 0.3);
+        }
+
+        .phase-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .phase-item {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+        }
+
+        .phase-num {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: var(--blue);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 800;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+
+        .phase-item .phase-text .title {
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .phase-item .phase-text .sub {
+            font-size: 11px;
+            color: var(--muted);
+            margin-top: 2px;
+        }
+
+        .data-model-code {
+            background: #0D1929;
+            border-radius: 12px;
+            padding: 14px;
+            font-size: 10.5px;
+            line-height: 1.7;
+            color: #94A3B8;
+            font-family: monospace;
+            overflow-x: auto;
+        }
+
+        .data-model-code .kw {
+            color: #60A5FA;
+        }
+
+        .data-model-code .str {
+            color: #A3E635;
+        }
+
+        .data-model-code .cmt {
+            color: #475569;
+            font-style: italic;
+        }
+
+        /* Responsive */
+        @media (max-width: 780px) {
+            body {
+                padding: 20px 12px;
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .side-panel {
+                width: 375px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ══════════════════════════════════
+     PHONE MOCKUP
+════════════════════════════════════ -->
+    <div class="phone-wrap">
+        <div class="phone-label">TucanApp — Vista Cajero</div>
+        <div class="phone" id="phone">
+
+            <!-- ── SCREEN 1: POS (Cajero) ── -->
+            <div class="screen active" id="screen-pos">
+                <div class="status-bar">
+                    <span>🦜 TucanApp</span>
+                    <span><span class="online-dot"></span>Online · Bs 45.30</span>
+                </div>
+
+                <div class="header">
+                    <div class="header-title">Hola, <span>Pedro</span> 👋</div>
+                    <div class="header-right">
+                        <button class="btn-icon" onclick="switchScreen('screen-admin')">⚙️</button>
+                        <div class="avatar">P</div>
+                    </div>
+                </div>
+
+                <div class="session-pill">
+                    <div>
+                        <div class="label">Sesión Activa</div>
+                        <div class="rate">Bs 45.30 <span>/ USD</span></div>
+                    </div>
+                    <div class="status-badge">🟢 Caja Abierta</div>
+                </div>
+
+                <div class="categories">
+                    <button class="cat-btn active">🍹 Tragos</button>
+                    <button class="cat-btn">🥃 Shots</button>
+                    <button class="cat-btn">🍾 Botellas</button>
+                    <button class="cat-btn">🧃 Insumos</button>
+                </div>
+
+                <div class="products-grid" id="products-grid">
+                    <!-- Cards generadas con JS -->
+                </div>
+
+                <div class="ticket-bar" onclick="switchScreen('screen-ticket')">
+                    <div class="left">
+                        <div class="count" id="cart-count">0 ítems en ticket</div>
+                        <div class="total" id="cart-total">$0.00</div>
+                        <div class="total-bs" id="cart-bs">Bs 0.00</div>
+                    </div>
+                    <div class="checkout-chip">Ver Ticket →</div>
+                </div>
+
+                <div class="bottom-nav">
+                    <button class="nav-item active">
+                        <span class="nav-icon">🏠</span>POS
+                    </button>
+                    <button class="nav-item" onclick="switchScreen('screen-admin')">
+                        <span class="nav-icon">📊</span>Reportes
+                    </button>
+                    <button class="nav-item">
+                        <span class="nav-icon">⏳</span>En Espera
+                    </button>
+                    <button class="nav-item" onclick="switchScreen('screen-admin')">
+                        <span class="nav-icon">⚙️</span>Admin
+                    </button>
+                </div>
+            </div>
+
+            <!-- ── SCREEN 2: TICKET ── -->
+            <div class="screen" id="screen-ticket" style="overflow-y:auto;">
+                <div class="ticket-header">
+                    <button class="back-btn" onclick="switchScreen('screen-pos')">←</button>
+                    <h2>Ticket de Cobro</h2>
+                </div>
+
+                <div class="client-card">
+                    <label>Cliente</label>
+                    <div class="client-name">Jonathan</div>
+                    <div class="client-phone">📱 04121234567</div>
+                </div>
+
+                <div class="order-items" id="order-items">
+                    <!-- Generado con JS -->
+                </div>
+
+                <div class="totals-card">
+                    <div class="totals-row"><span class="muted">Subtotal</span><span id="t-sub">$0.00</span></div>
+                    <div class="totals-row"><span class="muted">Tasa BS</span><span>45.30</span></div>
+                    <div class="totals-row big"><span>TOTAL</span><span id="t-total">$0.00</span></div>
+                    <div class="totals-row"><span class="muted">Equivale</span><span id="t-bs"
+                            style="color:var(--muted)">Bs 0.00</span></div>
+                </div>
+
+                <div class="payment-methods">
+                    <label>Método de Pago</label>
+                    <div class="methods-grid">
+                        <button class="method-btn selected" onclick="selectMethod(this)"><span
+                                class="icon">💸</span>Zelle</button>
+                        <button class="method-btn" onclick="selectMethod(this)"><span class="icon">📱</span>Pago
+                            Móvil</button>
+                        <button class="method-btn" onclick="selectMethod(this)"><span class="icon">💵</span>Efectivo
+                            USD</button>
+                        <button class="method-btn" onclick="selectMethod(this)"><span class="icon">💴</span>Efectivo
+                            BS</button>
+                    </div>
+                </div>
+
+                <button class="pay-btn" onclick="switchScreen('screen-success')">
+                    ✅ Confirmar Pago
+                </button>
+            </div>
+
+            <!-- ── SCREEN 3: SUCCESS ── -->
+            <div class="screen" id="screen-success">
+                <div class="success-screen">
+                    <div class="success-icon">✅</div>
+                    <h2>¡Pago Aprobado!</h2>
+                    <p>La transacción se registró correctamente en Firestore.<br>Orden #0012</p>
+                    <div class="receipt-card">
+                        <div class="receipt-row"><span style="color:var(--muted)">Método</span><span>Zelle + Pago
+                                Móvil</span></div>
+                        <div class="receipt-row"><span style="color:var(--muted)">Zelle</span><span>$5.00</span></div>
+                        <div class="receipt-row"><span style="color:var(--muted)">Pago Móvil</span><span>Bs
+                                226.50</span></div>
+                        <div class="receipt-row"><span style="color:var(--muted)">Vuelto</span><span
+                                style="color:var(--green)">Bs 0.00</span></div>
+                        <div class="receipt-row" style="border-top:1px solid #334155;padding-top:10px;margin-top:6px;">
+                            <span>TOTAL</span><span style="color:var(--blue)">$10.00</span>
+                        </div>
+                    </div>
+                    <button class="new-order-btn" onclick="resetAndGoHome()">🏠 Nueva Orden</button>
+                </div>
+            </div>
+
+            <!-- ── SCREEN 4: ADMIN ── -->
+            <div class="screen" id="screen-admin" style="overflow-y:auto;">
+                <div class="admin-header">
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+                        <button class="back-btn" onclick="switchScreen('screen-pos')"
+                            style="background:rgba(255,255,255,0.15);">←</button>
+                        <div>
+                            <h2>Panel Admin</h2>
+                            <p>Sesión 24/02/2026 · Bs 45.30/USD</p>
+                        </div>
+                    </div>
+                    <div class="admin-stats">
+                        <div class="stat-chip">
+                            <div class="val">$247.50</div>
+                            <div class="key">Ventas Hoy</div>
+                        </div>
+                        <div class="stat-chip">
+                            <div class="val">32</div>
+                            <div class="key">Órdenes</div>
+                        </div>
+                        <div class="stat-chip">
+                            <div class="val">3</div>
+                            <div class="key">En Espera</div>
+                        </div>
+                        <div class="stat-chip">
+                            <div class="val">🟢 Online</div>
+                            <div class="key">Estado</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="admin-section">
+                    <h3>📋 Menú Activo</h3>
+                    <div class="menu-item-row">
+                        <div class="emoji">🍹</div>
+                        <div class="info">
+                            <div class="name">Cuba Libre</div>
+                            <div class="tag">Trago</div>
+                        </div>
+                        <div class="price-col">
+                            <div class="price">$5.00</div>
+                            <div class="avail">● Disponible</div>
+                        </div>
+                    </div>
+                    <div class="menu-item-row">
+                        <div class="emoji">🥃</div>
+                        <div class="info">
+                            <div class="name">Shot Tequila</div>
+                            <div class="tag">Shot</div>
+                        </div>
+                        <div class="price-col">
+                            <div class="price">$4.00</div>
+                            <div class="avail">● Disponible</div>
+                        </div>
+                    </div>
+                    <div class="menu-item-row">
+                        <div class="emoji">🍾</div>
+                        <div class="info">
+                            <div class="name">Whisky Premium</div>
+                            <div class="tag">Botella</div>
+                        </div>
+                        <div class="price-col">
+                            <div class="price">$80.00</div>
+                            <div class="avail">● Disponible</div>
+                        </div>
+                    </div>
+                    <div class="menu-item-row">
+                        <div class="emoji">🥂</div>
+                        <div class="info">
+                            <div class="name">Ron Añejo</div>
+                            <div class="tag">Botella</div>
+                        </div>
+                        <div class="price-col">
+                            <div class="price">$45.00</div>
+                            <div class="avail" style="color:var(--orange)">● Stock bajo</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="padding:0 20px 30px;">
+                    <button style="width:100%;border:none;background:linear-gradient(135deg,#7C3AED,#4F46E5);
+          color:#fff;border-radius:18px;padding:14px;font-family:'Plus Jakarta Sans',sans-serif;
+          font-size:13px;font-weight:800;cursor:pointer;margin-bottom:10px;">
+                        📁 Cerrar Caja y Exportar Reporte
+                    </button>
+                    <button style="width:100%;border:1.5px solid #334155;background:transparent;
+          color:var(--text);border-radius:18px;padding:14px;font-family:'Plus Jakarta Sans',sans-serif;
+          font-size:13px;font-weight:700;cursor:pointer;">
+                        ➕ Agregar Producto
+                    </button>
+                </div>
+            </div>
+
+        </div><!-- /phone -->
+    </div><!-- /phone-wrap -->
+
+
+    <!-- ══════════════════════════════════
+     SIDE PANEL
+════════════════════════════════════ -->
+    <div class="side-panel">
+
+        <div style="padding-top:0;">
+            <div style="font-size:28px;font-weight:800;margin-bottom:4px;">🦜 TucanApp</div>
+            <div style="font-size:14px;color:var(--muted);line-height:1.5;">
+                Sistema POS móvil para barras · Caracas · PWA offline-first
+            </div>
+        </div>
+
+        <div class="panel-card">
+            <h3>Stack Tecnológico</h3>
+            <div class="badge-row">
+                <span class="badge blue">React + Vite</span>
+                <span class="badge blue">TailwindCSS</span>
+                <span class="badge orange">Firebase Firestore</span>
+                <span class="badge orange">Firebase Auth</span>
+                <span class="badge green">PWA Offline-first</span>
+                <span class="badge purple">Cloud Functions</span>
+                <span class="badge green">Firebase Hosting</span>
+            </div>
+        </div>
+
+        <div class="panel-card">
+            <h3>Modelo de Datos</h3>
+            <div class="data-model-code">
+                <span class="cmt">// Firestore Collections</span>
+                <span class="kw">products</span>/<span class="str">{id}</span>
+                name, type, priceUSD,
+                stockQty, available
+
+                <span class="kw">users</span>/<span class="str">{uid}</span>
+                name, <span class="str">role</span>: cashier|admin
+
+                <span class="kw">sessions</span>/<span class="str">{id}</span>
+                exchangeRateBs,
+                rateHistory[], status
+
+                <span class="kw">orders</span>/<span class="str">{id}</span>
+                mode: fast|tab
+                status: open→paid
+                rateAtTime, totalUSD
+                ├── <span class="kw">items</span>/<span class="str">{itemId}</span>
+                └── <span class="kw">payments</span>/<span class="str">{payId}</span>
+            </div>
+        </div>
+
+        <div class="panel-card">
+            <h3>Fases de Ejecución</h3>
+            <div class="phase-list">
+                <div class="phase-item">
+                    <div class="phase-num">1</div>
+                    <div class="phase-text">
+                        <div class="title">Configuración Inicial</div>
+                        <div class="sub">Vite/React + Firebase + PWA manifest</div>
+                    </div>
+                </div>
+                <div class="phase-item">
+                    <div class="phase-num">2</div>
+                    <div class="phase-text">
+                        <div class="title">Seguridad y BD</div>
+                        <div class="sub">Reglas Firestore · Índices · Usuario Admin</div>
+                    </div>
+                </div>
+                <div class="phase-item">
+                    <div class="phase-num">3</div>
+                    <div class="phase-text">
+                        <div class="title">Módulo Admin</div>
+                        <div class="sub">CRUD productos · Gestión roles · Tasas</div>
+                    </div>
+                </div>
+                <div class="phase-item">
+                    <div class="phase-num">4</div>
+                    <div class="phase-text">
+                        <div class="title">POS Cajero + Tests Offline</div>
+                        <div class="sub">Cuadrícula táctil · Cuentas en espera</div>
+                    </div>
+                </div>
+                <div class="phase-item">
+                    <div class="phase-num">5</div>
+                    <div class="phase-text">
+                        <div class="title">Pago Mixto USD/BS</div>
+                        <div class="sub">Partición de métodos · Cálculo de vuelto</div>
+                    </div>
+                </div>
+                <div class="phase-item">
+                    <div class="phase-num">6</div>
+                    <div class="phase-text">
+                        <div class="title">Caja y Reportes</div>
+                        <div class="sub">Cierre via Cloud Function · Export CSV/PDF</div>
+                    </div>
+                </div>
+                <div class="phase-item">
+                    <div class="phase-num">7</div>
+                    <div class="phase-text">
+                        <div class="title">PWA + Deploy</div>
+                        <div class="sub">Prompt instalación · Firebase Hosting</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel-card" style="border:1.5px solid rgba(59,130,246,0.3);">
+            <h3>Design Principles</h3>
+            <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--muted);">
+                <div>⚡ <strong style="color:var(--text)">Cero Clics</strong> — cobro en segundos</div>
+                <div>📐 <strong style="color:var(--text)">Centavos</strong> — sin errores float</div>
+                <div>🔁 <strong style="color:var(--text)">Offline-first</strong> — opera sin señal</div>
+                <div>🔐 <strong style="color:var(--text)">Roles</strong> — cashier vs admin</div>
+                <div>👆 <strong style="color:var(--text)">Thumb-driven</strong> — acciones en zona inferior</div>
+            </div>
+        </div>
+
+    </div><!-- /side-panel -->
+
+
+    <script>
+        const RATE = 45.30;
+
+        const PRODUCTS = [
+            { id: 'p1', emoji: '🍹', name: 'Cuba Libre', price: 5.00 },
+            { id: 'p2', emoji: '🥃', name: 'Shot Tequila', price: 4.00 },
+            { id: 'p3', emoji: '🍺', name: 'Cerveza Fría', price: 3.00 },
+            { id: 'p4', emoji: '🍹', name: 'Mojito', price: 6.00 },
+            { id: 'p5', emoji: '🫧', name: 'Gin Tonic', price: 7.00 },
+            { id: 'p6', emoji: '🥂', name: 'Champagne', price: 12.00 },
+        ];
+
+        let cart = {};
+
+        function renderProducts() {
+            const grid = document.getElementById('products-grid');
+            grid.innerHTML = '';
+            PRODUCTS.forEach(p => {
+                const qty = cart[p.id]?.qty || 0;
+                const card = document.createElement('div');
+                card.className = 'product-card' + (qty > 0 ? ' in-cart' : '');
+                card.innerHTML = `
+        <span class="prod-emoji">${p.emoji}</span>
+        <div class="prod-name">${p.name}</div>
+        <div class="prod-price">$${p.price.toFixed(2)}</div>
+        <div class="prod-bs">Bs ${(p.price * RATE).toFixed(2)}</div>
+        ${qty > 0 ? `<div class="cart-badge">×${qty}</div>` : ''}
+        <button class="add-btn" onclick="addToCart('${p.id}')">+</button>
+      `;
+                grid.appendChild(card);
+            });
+        }
+
+        function addToCart(id) {
+            const p = PRODUCTS.find(x => x.id === id);
+            if (!cart[id]) cart[id] = { ...p, qty: 0 };
+            cart[id].qty += 1;
+            updateCartBar();
+            renderProducts();
+            renderTicket();
+        }
+
+        function updateCartBar() {
+            const items = Object.values(cart).filter(x => x.qty > 0);
+            const total = items.reduce((s, x) => s + x.price * x.qty, 0);
+            const qty = items.reduce((s, x) => s + x.qty, 0);
+            document.getElementById('cart-count').textContent = `${qty} ítem${qty !== 1 ? 's' : ''} en ticket`;
+            document.getElementById('cart-total').textContent = `$${total.toFixed(2)}`;
+            document.getElementById('cart-bs').textContent = `Bs ${(total * RATE).toFixed(2)}`;
+        }
+
+        function renderTicket() {
+            const items = Object.values(cart).filter(x => x.qty > 0);
+            const total = items.reduce((s, x) => s + x.price * x.qty, 0);
+            const container = document.getElementById('order-items');
+            container.innerHTML = items.length === 0
+                ? '<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px;">Sin ítems. Agrega productos.</div>'
+                : items.map(x => `
+          <div class="order-item">
+            <div class="item-emoji">${x.emoji}</div>
+            <div class="item-info">
+              <div class="name">${x.name}</div>
+              <div class="qty">×${x.qty}</div>
+            </div>
+            <div class="item-price">$${(x.price * x.qty).toFixed(2)}</div>
+          </div>`).join('');
+            document.getElementById('t-sub').textContent = `$${total.toFixed(2)}`;
+            document.getElementById('t-total').textContent = `$${total.toFixed(2)}`;
+            document.getElementById('t-bs').textContent = `Bs ${(total * RATE).toFixed(2)}`;
+        }
+
+        function selectMethod(btn) {
+            document.querySelectorAll('.method-btn').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+        }
+
+        function switchScreen(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            if (id === 'screen-ticket') renderTicket();
+        }
+
+        function resetAndGoHome() {
+            cart = {};
+            updateCartBar();
+            renderProducts();
+            switchScreen('screen-pos');
+        }
+
+        // Init
+        renderProducts();
+    </script>
+</body>
+
+</html>
