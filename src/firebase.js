@@ -1,5 +1,5 @@
 // src/firebase.js — Los 3 Cochinitos POS
-// Proyecto: cochinitos-pos
+// Proyecto: kz-pos
 
 import { initializeApp } from 'firebase/app'
 import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore'
