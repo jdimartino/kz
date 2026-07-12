@@ -1,13 +1,15 @@
 // src/components/admin/ProductForm.jsx
 import { useState } from 'react'
 import { createProduct, updateProduct } from '../../services/productService'
+import { useCategories } from '../../hooks/useCategories'
 
 const EMOJIS = ['🥞', '🥩', '🥪', '🫓', '🧀', '🫔', '🥓', '🍽️', '🍗', '🥤', '🍟', '🍋', '🥨', '🌮', '🍕', '☕', '🧋']
 
-const empty = { name: '', emoji: '🍺', category: 'Otros', priceBS: '', active: true }
+const empty = { name: '', emoji: '🍺', category: '', priceUSD: '', active: true }
 
 export default function ProductForm({ product, onClose }) {
-    const [form, setForm] = useState(product ? { ...product, priceBS: product.priceBS.toString() } : empty)
+    const { categories } = useCategories()
+    const [form, setForm] = useState(product ? { ...product, priceUSD: product.priceUSD.toString() } : { ...empty, category: categories[0]?.name || '' })
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState('')
     const editing = !!product
@@ -16,11 +18,11 @@ export default function ProductForm({ product, onClose }) {
 
     const handleSubmit = async (e) => {
         e.preventDefault()
-        const price = parseFloat(form.priceBS)
+        const price = parseFloat(form.priceUSD)
         if (isNaN(price) || price <= 0) { setError('El precio debe ser mayor a 0'); return }
         setSaving(true)
         try {
-            const payload = { ...form, priceBS: price, category: 'Otros' }
+            const payload = { ...form, priceUSD: price, category: form.category || 'Otros' }
             if (editing) await updateProduct(product.id, payload)
             else await createProduct(payload)
             onClose()
@@ -71,18 +73,35 @@ export default function ProductForm({ product, onClose }) {
 
                     {/* Precio */}
                     <div>
-                        <label className="label-xs">Precio (Bs.)</label>
+                        <label className="label-xs">Precio (USD)</label>
                         <div className="relative">
-                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">Bs</span>
+                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">$</span>
                             <input
                                 type="number" step="0.01" min="0.01"
-                                value={form.priceBS}
-                                onChange={e => set('priceBS', e.target.value)}
+                                value={form.priceUSD}
+                                onChange={e => set('priceUSD', e.target.value)}
                                 className="input-field pl-10"
-                                placeholder="0,00"
+                                placeholder="0.00"
                                 required
                             />
                         </div>
+                    </div>
+
+                    {/* Categoría */}
+                    <div>
+                        <label className="label-xs">Categoría / Grupo</label>
+                        <select
+                            value={form.category}
+                            onChange={e => set('category', e.target.value)}
+                            className="input-field mt-1"
+                        >
+                            {categories.length === 0 && <option value="">Sin grupos</option>}
+                            {categories.map(cat => (
+                                <option key={cat.id} value={cat.name}>
+                                    {cat.name}
+                                </option>
+                            ))}
+                        </select>
                     </div>
 
                     {error && <p className="text-red-400 text-xs text-center">{error}</p>}

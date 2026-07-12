@@ -1,10 +1,12 @@
 // src/pages/SuccessPage.jsx
 import { useNav } from '../context/NavigationContext'
-import { formatBs } from '../utils/money'
+import { formatUSD, formatBs } from '../utils/money'
 import LogoIcon from '../components/LogoIcon'
 
 export default function SuccessPage() {
     const { setScreen, lastOrderId, lastOrderData } = useNav()
+
+    const pay = lastOrderData?.payment
 
     return (
         <div className="min-h-screen bg-[#0F172A] flex flex-col items-center justify-center p-6 text-center">
@@ -35,25 +37,34 @@ export default function SuccessPage() {
                     <div className="border-t border-white/5 pt-3 space-y-2 text-xs">
                         <div className="flex justify-between">
                             <p className="text-slate-400 font-bold uppercase tracking-wider">Monto Total</p>
-                            <p className="text-blue-400 font-extrabold text-sm">
-                                {formatBs(lastOrderData.totalCents)}
-                            </p>
+                            <div className="text-right">
+                                <p className="text-blue-400 font-extrabold text-sm">{formatUSD(lastOrderData.totalUSD)}</p>
+                                {pay?.totalBsAtPayment && (
+                                    <p className="text-slate-500 text-[10px]">{formatBs(pay.totalBsAtPayment)} @ {pay.paymentRate?.toFixed(2)}</p>
+                                )}
+                            </div>
                         </div>
-                        {lastOrderData.payment && (
+                        {pay && (
                             <>
-                                {lastOrderData.payment.paidBS > 0 && (
+                                {pay.paidBS > 0 && pay.method !== 'usd_cash' && (
                                     <div className="flex justify-between">
                                         <p className="text-slate-500 font-semibold">Pagado</p>
-                                        <p className="text-slate-300 font-bold">Bs {lastOrderData.payment.paidBS.toFixed(2)}</p>
+                                        <p className="text-slate-300 font-bold">{formatBs(pay.paidBS)}</p>
                                     </div>
                                 )}
-                                {lastOrderData.payment.breakdown && lastOrderData.payment.breakdown.map((b, i) => {
+                                {pay.method === 'usd_cash' && pay.paidBS > 0 && (
+                                    <div className="flex justify-between">
+                                        <p className="text-slate-500 font-semibold">Pagado USD</p>
+                                        <p className="text-slate-300 font-bold">{formatUSD(pay.paidBS)}</p>
+                                    </div>
+                                )}
+                                {pay.breakdown && pay.breakdown.map((b, i) => {
                                     const labels = { bs_cash: 'Efectivo Bs.', transfer: 'Pago Móvil', pos_term: 'Punto de Venta', usd_cash: 'Efectivo USD' }
                                     const icons = { bs_cash: '💴', transfer: '📲', pos_term: '💳', usd_cash: '💵' }
                                     return (
                                         <div key={i} className="flex justify-between">
                                             <p className="text-slate-500 font-semibold">{icons[b.method] || ''} {labels[b.method] || b.method}</p>
-                                            <p className="text-slate-300 font-bold">Bs {b.amountBS.toFixed(2)}</p>
+                                            <p className="text-slate-300 font-bold">{formatBs(b.amountBS)}</p>
                                         </div>
                                     )
                                 })}
@@ -74,7 +85,7 @@ export default function SuccessPage() {
                                         <span className="text-slate-500">x{item.qty}</span>
                                     </span>
                                     <span className="text-slate-400 font-mono">
-                                        {formatBs(item.subtotalCents)}
+                                        {formatUSD(item.subtotalUSD)}
                                     </span>
                                 </div>
                             ))}

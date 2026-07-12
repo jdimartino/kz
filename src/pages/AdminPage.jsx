@@ -6,11 +6,13 @@ import { useNav } from '../context/NavigationContext'
 import LogoIcon from '../components/LogoIcon'
 import ProductList from '../components/admin/ProductList'
 import SessionPanel from '../components/admin/SessionPanel'
+import CategoryPanel from '../components/admin/CategoryPanel'
 import ReportPage from './ReportPage'
 import HistoricalReportPage from './HistoricalReportPage'
 
 const TABS = [
     { id: 'products', label: '📦 Productos' },
+    { id: 'categories', label: '🏷️ Grupos' },
     { id: 'caja', label: '🏪 Caja' },
     { id: 'report', label: '📊 Reporte Hoy' },
     { id: 'historical', label: '📋 Reporte Histórico' },
@@ -37,7 +39,7 @@ export default function AdminPage() {
                 <div className="flex items-center gap-2">
                     <LogoIcon className="w-7 h-7" />
                     <div>
-                        <p className="text-white font-bold text-sm leading-none">Los 3 Cochinitos Admin</p>
+                         <p className="text-white font-bold text-sm leading-none">La KZ Admin</p>
                         <p className="text-slate-400 text-[11px] leading-none mt-0.5 font-semibold">By JDM</p>
                     </div>
                 </div>
@@ -100,6 +102,7 @@ export default function AdminPage() {
             {/* Content */}
             <main className="flex-1 p-4 overflow-auto">
                 {activeTab === 'products' && <ProductList />}
+                {activeTab === 'categories' && <CategoryPanel />}
                 {activeTab === 'caja' && <SessionPanel onSessionOpen={() => setScreen('pos')} />}
                 {activeTab === 'report' && <ReportPage onBack={() => handleTabChange('caja')} />}
                 {activeTab === 'historical' && <HistoricalReportPage />}

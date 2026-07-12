@@ -1,6 +1,6 @@
-# Los 3 Cochinitos POS
+# La KZ POS
 
-Sistema de punto de venta para barras y restaurantes.
+Sistema POS para La KZ.
 
 ## Stack
 

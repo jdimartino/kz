@@ -12,12 +12,17 @@ function cartReducer(state, action) {
                     ...state,
                     items: state.items.map(i =>
                         i.productId === action.payload.id
-                            ? { ...i, qty: i.qty + 1, subtotalCents: (i.qty + 1) * i.unitPriceCents }
+                            ? {
+                                ...i,
+                                qty: i.qty + 1,
+                                subtotalUSD: (i.qty + 1) * i.unitPriceUSD,
+                                log: [...(i.log || []), { qty: 1, addedAt: Date.now() }],
+                            }
                             : i
                     ),
                 }
             }
-            const unitPriceCents = Math.round(action.payload.priceBS * 100)
+            const unitPriceUSD = Number(action.payload.priceUSD)
             return {
                 ...state,
                 items: [...state.items, {
@@ -25,8 +30,9 @@ function cartReducer(state, action) {
                     name: action.payload.name,
                     emoji: action.payload.emoji,
                     qty: 1,
-                    unitPriceCents,
-                    subtotalCents: unitPriceCents,
+                    unitPriceUSD,
+                    subtotalUSD: unitPriceUSD,
+                    log: [{ qty: 1, addedAt: Date.now() }],
                 }],
             }
         }
@@ -37,7 +43,12 @@ function cartReducer(state, action) {
                 ...state,
                 items: state.items
                     .map(i => i.productId === action.payload
-                        ? { ...i, qty: i.qty - 1, subtotalCents: (i.qty - 1) * i.unitPriceCents }
+                        ? {
+                            ...i,
+                            qty: i.qty - 1,
+                            subtotalUSD: (i.qty - 1) * i.unitPriceUSD,
+                            log: [...(i.log || []), { qty: -1, addedAt: Date.now() }],
+                        }
                         : i
                     )
                     .filter(i => i.qty > 0),
@@ -52,12 +63,11 @@ function cartReducer(state, action) {
 export function CartProvider({ children }) {
     const [state, dispatch] = useReducer(cartReducer, { items: [] })
 
-    const totalCents = state.items.reduce((sum, i) => sum + i.subtotalCents, 0)
-    const totalBs = totalCents / 100
+    const totalUSD = state.items.reduce((sum, i) => sum + Number(i.subtotalUSD), 0)
     const itemCount = state.items.reduce((sum, i) => sum + i.qty, 0)
 
     return (
-        <CartContext.Provider value={{ items: state.items, totalCents, totalBs, itemCount, dispatch }}>
+        <CartContext.Provider value={{ items: state.items, totalUSD, itemCount, dispatch }}>
             {children}
         </CartContext.Provider>
     )

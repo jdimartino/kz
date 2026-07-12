@@ -11,9 +11,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Los 3 Cochinitos POS',
-        short_name: 'Cochinitos',
-        description: 'Sistema POS - Los 3 Cochinitos',
+        name: 'La KZ POS',
+        short_name: 'La KZ',
+        description: 'Sistema POS - La KZ',
         theme_color: '#0F172A',
         background_color: '#0F172A',
         display: 'standalone',

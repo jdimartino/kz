@@ -5,7 +5,8 @@ import { useSession } from '../context/SessionContext'
 import { DEFAULT_USER } from '../context/AuthContext'
 import { useNav } from '../context/NavigationContext'
 import { saveOrder, nextInvoiceNumber, completeHoldOrder } from '../services/orderService'
-import { formatBs, toCents, fromCents, calcChange } from '../utils/money'
+import { formatUSD, formatBs, usdToBs, bsToUsd, calcChange } from '../utils/money'
+import { updateCustomerStats } from '../services/customerService'
 import { useToast } from '../components/Toast'
 
 const METHODS = [
@@ -24,14 +25,14 @@ const MIXED_OPTIONS = [
 ]
 
 export default function TicketPage() {
-    const { items, totalCents, dispatch } = useCart()
+    const { items, totalUSD, dispatch } = useCart()
     const { session } = useSession()
-    const { setScreen, setOrderId, setLastOrderData, holdOrderId, setHoldOrderId } = useNav()
+    const { setScreen, setOrderId, setLastOrderData, holdOrderId, setHoldOrderId, selectedClient, setSelectedClient } = useNav()
     const toast = useToast()
+    const rate = session?.exchangeRate || null
 
     const [method, setMethod] = useState('transfer')
     const [paidBS, setPaidBS] = useState('')
-    const [paidPOS, setPaidPOS] = useState('')
     const [saving, setSaving] = useState(false)
     const [invoiceNum, setInvoiceNum] = useState(null)
     const [reference, setReference] = useState('')
@@ -41,52 +42,63 @@ export default function TicketPage() {
         nextInvoiceNumber().then(setInvoiceNum).catch(() => {})
     }, [])
 
-    // Resetear mixedPayments al cambiar de método
     useEffect(() => {
         if (method !== 'mixed') {
             setMixedPayments([])
         }
     }, [method])
 
-    const totalBs = useMemo(() => fromCents(totalCents), [totalCents])
+    const totalBs = rate ? usdToBs(totalUSD, rate) : 0
 
     const mixedRemaining = useMemo(() => {
         if (method !== 'mixed') return null
-        const totalPaid = mixedPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
-        const remaining = Math.max(0, totalBs - totalPaid)
-        const covered = remaining < 0.005
-        return { remaining, covered, totalPaid }
-    }, [method, mixedPayments, totalBs])
+        const totalPaid = mixedPayments.reduce((s, p) => {
+            const amount = parseFloat(p.amount) || 0
+            const inBs = p.method === 'usd_cash' ? usdToBs(amount, rate) : amount
+            return s + inBs
+        }, 0)
+        const diff = totalBs - totalPaid
+        const covered = diff < 0.005
+        return {
+            remainingBs: Math.max(0, diff),
+            remainingUSD: diff > 0 ? bsToUsd(diff, rate) : 0,
+            overpaidBs: Math.max(0, -diff),
+            overpaidUSD: diff < 0 ? bsToUsd(-diff, rate) : 0,
+            covered,
+            totalPaid,
+        }
+    }, [method, mixedPayments, totalBs, rate])
 
     const change = useMemo(() => {
         if (method === 'bs_cash') {
             if (!paidBS) return null
-            const paidBsCents = toCents(parseFloat(paidBS))
-            const ch = calcChange(paidBsCents, totalCents)
+            const ch = calcChange(parseFloat(paidBS) || 0, totalBs)
             return ch > 0 ? { label: 'Vuelto', value: formatBs(ch) } : null
         }
         if (method === 'usd_cash') {
-            const paidBsCents = toCents(parseFloat(paidBS) || 0)
-            const ch = calcChange(paidBsCents, totalCents)
-            return ch > 0 ? { label: 'Vuelto', value: formatBs(ch) } : null
-        }
-        if (method === 'pos_term') {
-            const paidPosCents = toCents(parseFloat(paidPOS) || 0)
-            const ch = calcChange(paidPosCents, totalCents)
-            return ch > 0 ? { label: 'Vuelto', value: formatBs(ch) } : null
+            if (!paidBS) return null
+            const paidUSD = parseFloat(paidBS) || 0
+            const changeUSD = Math.max(0, paidUSD - totalUSD)
+            if (changeUSD <= 0) return null
+            return {
+                label: 'Vuelto',
+                valueUSD: formatUSD(changeUSD),
+                valueBs: formatBs(usdToBs(changeUSD, rate)),
+            }
         }
         return null
-    }, [method, paidBS, paidPOS, totalCents])
+    }, [method, paidBS, totalBs])
 
     const canPay = useCallback(() => {
         if (!session?.id) return false
+        if (!rate) return false
         if (method === 'bs_cash') return true
-        if (method === 'usd_cash') return parseFloat(paidBS) >= totalBs
-        if (method === 'pos_term') return parseFloat(paidPOS) >= totalBs
+        if (method === 'usd_cash') return parseFloat(paidBS) >= totalUSD
+        if (method === 'pos_term') return true
         if (method === 'transfer') return true
         if (method === 'mixed') return !!mixedRemaining?.covered
         return false
-    }, [session?.id, method, paidBS, paidPOS, totalBs, mixedRemaining])
+    }, [session?.id, method, paidBS, totalBs, mixedRemaining, rate])
 
     const handlePay = async () => {
         if (!canPay()) return
@@ -98,13 +110,15 @@ export default function TicketPage() {
         try {
             const payment = {
                 method,
-                totalCents,
+                totalUSD,
+                totalBsAtPayment: totalBs,
+                paymentRate: rate,
                 ...(method === 'bs_cash' && {
                     paidBS: parseFloat(paidBS) || totalBs,
                     changeBS: paidBS ? parseFloat(paidBS) - totalBs : 0,
                 }),
                 ...(method === 'usd_cash' && { paidBS: parseFloat(paidBS), changeBS: parseFloat(paidBS) - totalBs }),
-                ...(method === 'pos_term' && { paidPOS: parseFloat(paidPOS) }),
+                ...(method === 'pos_term' && { paidPOS: totalBs }),
                 ...(method === 'transfer' && { reference }),
                 ...(method === 'mixed' && {
                     breakdown: mixedPayments.map(p => ({
@@ -113,21 +127,27 @@ export default function TicketPage() {
                     })),
                 }),
             }
+            const customerId = selectedClient?.id?.length > 20 ? selectedClient.id : null
             const orderId = await saveOrder({
                 cashierId: DEFAULT_USER.uid,
                 sessionId: session.id,
                 items,
                 payment,
                 invoiceNumber: invoiceNum,
+                customerId,
             })
+            if (customerId) {
+                await updateCustomerStats(customerId, { totalUSD }).catch(() => {})
+            }
             setOrderId(orderId)
             setLastOrderData({
                 items: [...items],
-                totalCents,
+                totalUSD,
                 payment: { ...payment },
                 invoiceNumber: invoiceNum,
             })
             dispatch({ type: 'CLEAR_CART' })
+            setSelectedClient(null)
             if (holdOrderId) {
                 await completeHoldOrder(holdOrderId)
                 setHoldOrderId(null)
@@ -167,10 +187,16 @@ export default function TicketPage() {
                               </span>
                         }
                     </div>
-                    <p className="text-slate-500 text-[11px] mt-0.5">{items.length} producto{items.length !== 1 ? 's' : ''}</p>
+                    <p className="text-slate-500 text-[11px] mt-0.5">
+                        {items.length} producto{items.length !== 1 ? 's' : ''}
+                        {rate && <span className="text-slate-400 ml-2">Tasa: Bs {rate.toFixed(2)}</span>}
+                    </p>
                 </div>
                 <div className="ml-auto text-right">
-                    <p className="text-blue-400 font-extrabold text-lg leading-none">{formatBs(totalCents)}</p>
+                    <p className="text-blue-400 font-extrabold text-lg leading-none">{formatUSD(totalUSD)}</p>
+                    {totalBs > 0 && (
+                        <p className="text-slate-300 font-bold text-sm">{formatBs(totalBs)}</p>
+                    )}
                 </div>
             </header>
 
@@ -194,10 +220,11 @@ export default function TicketPage() {
                             <span className="text-base">{item.emoji}</span>
                             <div className="flex-1">
                                 <p className="text-white text-xs font-semibold">{item.name}</p>
-                                <p className="text-slate-500 text-[11px]">{item.qty} × {formatBs(item.unitPriceCents)}</p>
+                                <p className="text-slate-500 text-[11px]">{item.qty} × {formatUSD(item.unitPriceUSD)}</p>
                             </div>
                             <div className="text-right">
-                                <p className="text-blue-400 font-bold text-xs">{formatBs(item.subtotalCents)}</p>
+                                <p className="text-blue-400 font-bold text-xs">{formatUSD(item.subtotalUSD)}</p>
+                                {rate && <p className="text-slate-500 text-[10px]">{formatBs(item.subtotalUSD * rate)}</p>}
                             </div>
                         </div>
                     ))}
@@ -205,7 +232,10 @@ export default function TicketPage() {
                     <div className="flex items-center justify-between px-4 py-3 bg-white/5">
                         <p className="text-white font-bold">Total</p>
                         <div className="text-right">
-                            <p className="text-blue-400 font-extrabold">{formatBs(totalCents)}</p>
+                            <p className="text-blue-400 font-extrabold">{formatUSD(totalUSD)}</p>
+                            {totalBs > 0 && (
+                                <p className="text-slate-500 text-[10px]">{formatBs(totalBs)}</p>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -249,42 +279,29 @@ export default function TicketPage() {
                     </div>
                 )}
 
-                {/* Input: Punto de Venta */}
-                {method === 'pos_term' && (
-                    <div>
-                        <label htmlFor="paid-pos" className="label-xs">Monto cobrado por terminal (Bs.)</label>
-                        <div className="relative">
-                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">Bs</span>
-                            <input
-                                id="paid-pos"
-                                type="number" step="0.01" min={totalBs}
-                                value={paidPOS}
-                                onChange={e => setPaidPOS(e.target.value)}
-                                className="input-field pl-10"
-                                placeholder={totalBs.toFixed(2)}
-                            />
-                        </div>
-                    </div>
-                )}
-
-                {/* Input: Efectivo USD (manual) */}
+                {/* Input: Efectivo USD — ahora automático con tasa */}
                 {method === 'usd_cash' && (
                     <div>
-                        <label htmlFor="paid-usd" className="label-xs">Equivalente en Bs. (calcular manualmente)</label>
+                        <label htmlFor="paid-usd" className="label-xs">Cantidad en USD recibida</label>
                         <p className="text-slate-500 text-[11px] mb-2">
-                            Ingresa el equivalente en bolívares del pago en USD. La conversión la realiza el cajero.
+                            La conversión a Bs se calcula automáticamente con la tasa BCV actual.
                         </p>
                         <div className="relative">
-                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">Bs</span>
+                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">$</span>
                             <input
                                 id="paid-usd"
-                                type="number" step="0.01" min={totalBs}
+                                type="number" step="0.01" min={totalUSD}
                                 value={paidBS}
                                 onChange={e => setPaidBS(e.target.value)}
                                 className="input-field pl-10"
-                                placeholder={`Ej: ${totalBs.toFixed(2)}`}
+                                placeholder={totalUSD.toFixed(2)}
                             />
                         </div>
+                        {paidBS && rate && (
+                            <p className="text-slate-500 text-[11px] mt-1">
+                                Equivalente: {formatBs(usdToBs(parseFloat(paidBS) || 0, rate))}
+                            </p>
+                        )}
                     </div>
                 )}
 
@@ -304,7 +321,7 @@ export default function TicketPage() {
                                     <span className="text-lg shrink-0">{opt?.icon || '💳'}</span>
                                     <span className="text-xs text-slate-300 font-semibold w-24 shrink-0">{opt?.label || mp.method}</span>
                                     <div className="relative flex-1">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">Bs</span>
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">{mp.method === 'usd_cash' ? '$' : 'Bs'}</span>
                                         <input
                                             type="number" step="0.01" min="0"
                                             value={mp.amount}
@@ -316,6 +333,11 @@ export default function TicketPage() {
                                             className="w-full bg-[#0F172A] border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
                                             placeholder="0,00"
                                         />
+                                        {mp.method === 'usd_cash' && mp.amount && rate && (
+                                            <p className="text-slate-500 text-[10px] mt-1 text-right">
+                                                = {formatBs(usdToBs(parseFloat(mp.amount) || 0, rate))}
+                                            </p>
+                                        )}
                                     </div>
                                     <button
                                         onClick={() => setMixedPayments(mixedPayments.filter((_, i) => i !== idx))}
@@ -343,23 +365,36 @@ export default function TicketPage() {
                             </div>
                         )}
 
-                        {/* Total cubierto / restante */}
+                        {/* Total cubierto / restante / vuelto */}
                         {mixedRemaining && mixedPayments.length > 0 && (
                             <div className={`rounded-xl px-4 py-3 flex justify-between items-center border ${
                                 mixedRemaining.covered
                                     ? 'bg-green-500/10 border-green-500/20'
                                     : 'bg-amber-500/10 border-amber-500/20'
                             }`}>
-                                <p className={`font-bold text-sm ${mixedRemaining.covered ? 'text-green-400' : 'text-amber-400'}`}>
-                                    {mixedRemaining.covered ? '✅ Total cubierto' : 'Restante'}
-                                </p>
-                                <div className="text-right">
-                                    {!mixedRemaining.covered && (
-                                        <p className="text-amber-400 font-extrabold">Bs {mixedRemaining.remaining.toFixed(2)}</p>
-                                    )}
-                                    <p className="text-slate-500 text-[11px]">
-                                        Cubierto: Bs {mixedRemaining.totalPaid.toFixed(2)}
+                                <div>
+                                    <p className={`font-bold text-sm ${mixedRemaining.covered ? 'text-green-400' : 'text-amber-400'}`}>
+                                        {mixedRemaining.covered ? '✅ Vuelto' : 'Restante'}
                                     </p>
+                                    {!mixedRemaining.covered && (
+                                        <p className="text-slate-500 text-[10px] mt-0.5">Cubierto: {formatBs(mixedRemaining.totalPaid)}</p>
+                                    )}
+                                    {mixedRemaining.covered && mixedRemaining.overpaidBs > 0 && (
+                                        <p className="text-slate-500 text-[10px] mt-0.5">Pagado: {formatBs(mixedRemaining.totalPaid)}</p>
+                                    )}
+                                </div>
+                                <div className="text-right">
+                                    {!mixedRemaining.covered ? (
+                                        <>
+                                            <p className="text-amber-400 font-extrabold">{formatUSD(mixedRemaining.remainingUSD)}</p>
+                                            <p className="text-amber-400/70 text-xs">{formatBs(mixedRemaining.remainingBs)}</p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <p className="text-green-400 font-extrabold">{formatUSD(mixedRemaining.overpaidUSD)}</p>
+                                            <p className="text-green-400/70 text-xs">{formatBs(mixedRemaining.overpaidBs)}</p>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -370,7 +405,11 @@ export default function TicketPage() {
                 {change && (
                     <div className="bg-green-500/10 border border-green-500/20 rounded-2xl px-4 py-3 flex justify-between items-center">
                         <p className="text-green-400 font-bold text-sm">{change.label}</p>
-                        <p className="text-green-400 font-extrabold text-lg">{change.value}</p>
+                        <div className="text-right">
+                            {change.valueUSD && <p className="text-green-400 font-extrabold text-lg">{change.valueUSD}</p>}
+                            {change.valueBs && <p className="text-green-400/70 text-xs">{change.valueBs}</p>}
+                            {change.value && !change.valueUSD && <p className="text-green-400 font-extrabold text-lg">{change.value}</p>}
+                        </div>
                     </div>
                 )}
 
@@ -410,7 +449,7 @@ export default function TicketPage() {
                     disabled={!canPay() || saving}
                     className="w-full bg-green-600 hover:bg-green-500 active:scale-[0.98] text-white font-extrabold py-4 px-6 rounded-2xl transition-all shadow-2xl shadow-green-600/30 disabled:opacity-40 disabled:pointer-events-none text-lg"
                 >
-                    {saving ? 'Procesando...' : `✅ Cobrar ${formatBs(totalCents)}`}
+                    {saving ? 'Procesando...' : <><span>✅ Cobrar {formatUSD(totalUSD)}</span><br /><span className="text-lg opacity-80">{formatBs(totalBs)}</span></>}
                 </button>
             </div>
         </div>

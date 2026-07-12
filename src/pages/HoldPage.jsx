@@ -6,11 +6,11 @@ import { DEFAULT_USER } from '../context/AuthContext'
 import { useNav } from '../context/NavigationContext'
 import { useOpenOrders } from '../hooks/useOpenOrders'
 import { saveHoldOrder, reopenOrder, cancelHoldOrder, appendHoldOrder, getOrderItems, updateHoldOrder } from '../services/orderService'
-import { formatBs } from '../utils/money'
+import { formatUSD } from '../utils/money'
 import { useToast } from '../components/Toast'
 
 export default function HoldPage() {
-    const { items, totalCents, dispatch } = useCart()
+    const { items, totalUSD, dispatch } = useCart()
     const { session } = useSession()
     const { setScreen, setHoldOrderId, holdOrderId } = useNav()
     const { orders, loading } = useOpenOrders()
@@ -85,7 +85,7 @@ export default function HoldPage() {
                             id: item.productId,
                             name: item.name,
                             emoji: item.emoji,
-                            priceBS: item.unitPriceCents / 100,
+                            priceUSD: item.unitPriceUSD,
                         },
                     })
                 }
@@ -122,7 +122,7 @@ export default function HoldPage() {
                             id: item.productId,
                             name: item.name,
                             emoji: item.emoji,
-                            priceBS: item.unitPriceCents / 100,
+                            priceUSD: item.unitPriceUSD,
                         },
                     })
                 }
@@ -158,16 +158,16 @@ export default function HoldPage() {
 
     const handleNotify = async (order) => {
         const phone = order.client?.phone?.replace(/^0/, '58')
-        const totalBs = formatBs(order.totalCents)
+        const totalUSDStr = formatUSD(order.totalUSD)
         let items = orderItems[order.id]
         if (!items?.length) {
             items = await getOrderItems(order.id)
             setOrderItems(prev => ({ ...prev, [order.id]: items }))
         }
         const lines = items
-            .map(i => `${i.emoji} ${i.name} x${i.qty} — ${formatBs(i.subtotalCents)}`)
+            .map(i => `${i.emoji} ${i.name} x${i.qty} — ${formatUSD(i.subtotalUSD)}`)
             .join('\n')
-        const msg = `🐷 *Los 3 Cochinitos* — Detalle de tu cuenta\n\nHola *${order.client?.name}*, aquí el resumen:\n\n${lines}\n\n💵 *Total: ${totalBs}*\n\n*Datos del Pago Movil*\n📱 04122098241\nV-22034344\n🏦 0134 (Banesco)\n\nGracias por tu visita 🙏`
+        const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${order.client?.name}*, aquí el resumen:\n\n${lines}\n\n💵 *Total: ${totalUSDStr}*\n\n*Datos del Pago Movil*\n📱 04122098241\nV-22034344\n🏦 0134 (Banesco)\n\nGracias por tu visita 🙏`
         window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank')
     }
 
@@ -233,7 +233,7 @@ export default function HoldPage() {
                                 <h2 className="text-white font-bold text-sm mb-3">
                                     💾 Guardar cuenta actual
                                     <span className="text-slate-500 font-normal ml-2 text-xs">
-                                        {items.length} producto{items.length !== 1 ? 's' : ''} · {formatBs(totalCents)}
+                                        {items.length} producto{items.length !== 1 ? 's' : ''} · {formatUSD(totalUSD)}
                                     </span>
                                 </h2>
 
@@ -317,7 +317,7 @@ export default function HoldPage() {
                                                 <option value="" disabled>-- Elige un cliente --</option>
                                                 {orders.map(o => (
                                                     <option key={o.id} value={o.id}>
-                                                        {o.client?.name} (Lleva: {formatBs(o.totalCents)})
+                                                        {o.client?.name} (Lleva: {formatUSD(o.totalUSD)})
                                                     </option>
                                                 ))}
                                             </select>
@@ -377,7 +377,7 @@ export default function HoldPage() {
                                     <p className="text-slate-500 text-xs mt-0.5">📱 {order.client?.phone}</p>
                                 </div>
                                 <div className="text-right">
-                                    <p className="text-blue-400 font-extrabold">{formatBs(order.totalCents)}</p>
+                                    <p className="text-blue-400 font-extrabold">{formatUSD(order.totalUSD)}</p>
                                     <p className="text-slate-600 text-[11px] mt-0.5">{formatTime(order.createdAt)}</p>
                                 </div>
                             </div>
@@ -393,7 +393,7 @@ export default function HoldPage() {
                                                 <span className="text-slate-500 ml-1">x{item.qty}</span>
                                             </span>
                                             <span className="text-blue-400 font-bold">
-                                                {formatBs(item.subtotalCents)}
+                                                {formatUSD(item.subtotalUSD)}
                                             </span>
                                         </div>
                                     ))

@@ -49,9 +49,8 @@ export function useSalesReport(sessionId) {
         return unsub
     }, [sessionId])
 
-    const totalCents = orders.reduce((s, o) => s + (o.totalCents || 0), 0)
-    const totalBs = totalCents / 100
+    const totalUSD = orders.reduce((s, o) => s + (o.totalUSD || 0), 0)
     const totalTx = orders.length
 
-    return { orders, loading, totalCents, totalBs, totalTx }
+    return { orders, loading, totalUSD, totalTx }
 }

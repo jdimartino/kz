@@ -65,15 +65,15 @@ export function useHistoricalReport({ mode, dateFrom, dateTo, sessionId }) {
                     itemsSnap.docs.forEach(d => {
                         const item = d.data()
                         const id = d.id
-                        if (!totalsMap[id]) totalsMap[id] = { name: item.name, emoji: item.emoji, qty: 0, totalCents: 0 }
+                        if (!totalsMap[id]) totalsMap[id] = { name: item.name, emoji: item.emoji, qty: 0, totalUSD: 0 }
                         totalsMap[id].qty += item.qty
-                        totalsMap[id].totalCents += item.subtotalCents
+                        totalsMap[id].totalUSD += Number(item.subtotalUSD)
                     })
                 }))
 
                 const sorted = Object.entries(totalsMap)
                     .map(([id, val]) => ({ id, ...val }))
-                    .sort((a, b) => b.totalCents - a.totalCents)
+                    .sort((a, b) => b.totalUSD - a.totalUSD)
 
                 setProductTotals(sorted)
                 setLoading(false)
@@ -84,8 +84,8 @@ export function useHistoricalReport({ mode, dateFrom, dateTo, sessionId }) {
             })
     }, [mode, dateFrom, dateTo, sessionId])
 
-    const totalCents = orders.reduce((s, o) => s + (o.totalCents || 0), 0)
+    const totalUSD = orders.reduce((s, o) => s + (o.totalUSD || 0), 0)
     const totalTx = orders.length
 
-    return { orders, loading, totalCents, totalTx, productTotals }
+    return { orders, loading, totalUSD, totalTx, productTotals }
 }

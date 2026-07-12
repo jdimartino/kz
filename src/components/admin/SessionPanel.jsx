@@ -1,25 +1,64 @@
 // src/components/admin/SessionPanel.jsx
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../../firebase'
 import { DEFAULT_USER } from '../../context/AuthContext'
 import { useSession } from '../../context/SessionContext'
 import { useSalesReport } from '../../hooks/useSalesReport'
 import { closeSession } from '../../services/sessionService'
-import { formatBs } from '../../utils/money'
+import { formatUSD } from '../../utils/money'
 import { useToast } from '../Toast'
+
+const RATE_ENDPOINTS = [
+    'https://ve.dolarapi.com/v1/dolares/oficial',
+    'https://api.dolarapi.com/v1/dolar',
+]
 
 export default function SessionPanel({ onSessionOpen }) {
     const { session, setSession } = useSession()
-    const { orders, loading, totalCents, totalTx } = useSalesReport(session?.id)
+    const { orders, loading, totalUSD, totalTx } = useSalesReport(session?.id)
     const toast = useToast()
     const [opening, setOpening] = useState(false)
     const [error, setError] = useState('')
     const [closing, setClosing] = useState(false)
     const [confirm, setConfirm] = useState(false)
+    const [exchangeRate, setExchangeRate] = useState('')
+    const [suggestedRate, setSuggestedRate] = useState(null)
+    const [rateLoading, setRateLoading] = useState(false)
+
+    // Sugerir tasa al abrir el panel de apertura
+    useEffect(() => {
+        if (session?.status === 'open') return
+        let cancelled = false
+        async function fetchSuggestion() {
+            setRateLoading(true)
+            for (const url of RATE_ENDPOINTS) {
+                try {
+                    const res = await fetch(url, { cache: 'no-store' })
+                    if (!res.ok) continue
+                    const data = await res.json()
+                    const value = data.promedio ?? data.rate
+                    if (value && !cancelled) {
+                        setSuggestedRate(Number(value))
+                        setExchangeRate(String(Number(value).toFixed(2)))
+                        setRateLoading(false)
+                        return
+                    }
+                } catch { /* try next */ }
+            }
+            setRateLoading(false)
+        }
+        fetchSuggestion()
+        return () => { cancelled = true }
+    }, [session?.status])
 
     const handleOpen = async (e) => {
         e.preventDefault()
+        const rate = parseFloat(exchangeRate)
+        if (isNaN(rate) || rate <= 0) {
+            setError('Ingresa una tasa de cambio válida')
+            return
+        }
         setOpening(true)
         try {
             const ref = await addDoc(collection(db, 'sessions'), {
@@ -27,9 +66,10 @@ export default function SessionPanel({ onSessionOpen }) {
                 status: 'open',
                 openedAt: serverTimestamp(),
                 closedAt: null,
+                exchangeRate: rate,
                 totalSales: 0,
             })
-            setSession({ id: ref.id, status: 'open' })
+            setSession({ id: ref.id, status: 'open', exchangeRate: rate })
             onSessionOpen?.()
         } catch (err) {
             setError('Error abriendo caja. Intenta de nuevo.')
@@ -42,7 +82,7 @@ export default function SessionPanel({ onSessionOpen }) {
     const handleClose = async () => {
         setClosing(true)
         try {
-            await closeSession(session.id, { totalBs: totalCents / 100, totalTx })
+            await closeSession(session.id, { totalUSD, totalTx })
             setSession(null)
             toast.success('Caja cerrada correctamente')
         } catch (err) {
@@ -54,11 +94,11 @@ export default function SessionPanel({ onSessionOpen }) {
         }
     }
 
-    const totalCentsSum = orders.reduce((s, o) => s + (o.totalCents || 0), 0)
+    const totalUSDSum = orders.reduce((s, o) => s + (o.totalUSD || 0), 0)
 
     const byMethod = orders.reduce((acc, o) => {
         const m = o.paymentMethod || 'unknown'
-        acc[m] = (acc[m] || 0) + (o.totalCents || 0)
+        acc[m] = (acc[m] || 0) + (o.totalUSD || 0)
         return acc
     }, {})
 
@@ -93,7 +133,7 @@ export default function SessionPanel({ onSessionOpen }) {
                         <div className="grid grid-cols-2 gap-3">
                             <div className="bg-[#0F172A] rounded-xl p-3 text-center">
                                 <p className="text-slate-400 text-[11px] font-bold uppercase tracking-wider mb-1">Total Ventas</p>
-                                <p className="text-blue-400 font-extrabold text-lg">{formatBs(totalCentsSum)}</p>
+                                <p className="text-blue-400 font-extrabold text-lg">{formatUSD(totalUSDSum)}</p>
                             </div>
                             <div className="bg-[#0F172A] rounded-xl p-3 text-center">
                                 <p className="text-slate-400 text-[11px] font-bold uppercase tracking-wider mb-1">Transacciones</p>
@@ -103,10 +143,10 @@ export default function SessionPanel({ onSessionOpen }) {
 
                         {Object.keys(byMethod).length > 0 && (
                             <div className="space-y-1">
-                                {Object.entries(byMethod).map(([m, cents]) => (
+                                {Object.entries(byMethod).map(([m, usd]) => (
                                     <div key={m} className="flex justify-between text-xs">
                                         <span className="text-slate-400">{METHOD_LABELS[m] || m}</span>
-                                        <span className="text-blue-400 font-bold">{formatBs(cents)}</span>
+                                        <span className="text-blue-400 font-bold">{formatUSD(usd)}</span>
                                     </div>
                                 ))}
                             </div>
@@ -119,7 +159,7 @@ export default function SessionPanel({ onSessionOpen }) {
                         ) : (
                             <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-4 space-y-3" role="dialog" aria-label="Confirmar cierre de caja">
                                 <p className="text-orange-400 font-bold text-center text-sm">¿Confirmar cierre de caja?</p>
-                                <p className="text-slate-400 text-xs text-center">Se registrará un total de <span className="text-white font-bold">{formatBs(totalCentsSum)}</span> en {totalTx} transacciones.</p>
+                                <p className="text-slate-400 text-xs text-center">Se registrará un total de <span className="text-white font-bold">{formatUSD(totalUSDSum)}</span> en {totalTx} transacciones.</p>
                                 <div className="flex gap-2">
                                     <button onClick={() => setConfirm(false)} className="btn-secondary flex-1 text-sm">Cancelar</button>
                                     <button
@@ -146,6 +186,45 @@ export default function SessionPanel({ onSessionOpen }) {
                     Inicia la sesión del día para comenzar a facturar.
                 </p>
                 <form onSubmit={handleOpen} className="space-y-4">
+                    {/* Tasa de cambio */}
+                    <div>
+                        <label className="label-xs">Tasa de cambio (Bs/USD)</label>
+                        <p className="text-slate-500 text-[11px] mb-2">
+                            Esta tasa se usará para calcular los montos en bolívares durante toda la sesión.
+                        </p>
+                        <div className="relative">
+                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">Bs</span>
+                            <input
+                                type="number" step="0.01" min="0.01"
+                                value={exchangeRate}
+                                onChange={e => setExchangeRate(e.target.value)}
+                                className="input-field pl-10 pr-12"
+                                placeholder={rateLoading ? 'Consultando...' : '0.00'}
+                                required
+                            />
+                            {rateLoading && (
+                                <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                                    <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                                </div>
+                            )}
+                            {!rateLoading && suggestedRate && (
+                                <button
+                                    type="button"
+                                    onClick={() => setExchangeRate(String(suggestedRate.toFixed(2)))}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-bold bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 px-2 py-1 rounded-lg transition-colors"
+                                    title="Usar tasa sugerida"
+                                >
+                                    ⟳ {suggestedRate.toFixed(2)}
+                                </button>
+                            )}
+                        </div>
+                        {suggestedRate && (
+                            <p className="text-slate-500 text-[10px] mt-1">
+                                Tasa sugerida: Bs {suggestedRate.toFixed(2)} (puedes modificarla)
+                            </p>
+                        )}
+                    </div>
+
                     {error && <p className="text-red-400 text-xs">{error}</p>}
                     <button type="submit" disabled={opening} className="btn-primary w-full">
                         {opening ? 'Abriendo...' : '🏪 Abrir Caja'}

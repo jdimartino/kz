@@ -9,13 +9,11 @@ import POSPage from './pages/POSPage'
 import TicketPage from './pages/TicketPage'
 import SuccessPage from './pages/SuccessPage'
 import AdminPage from './pages/AdminPage'
-import HoldPage from './pages/HoldPage'
 
 function AppRouter() {
     const { screen } = useNav()
     if (screen === 'ticket') return <TicketPage />
     if (screen === 'success') return <SuccessPage />
-    if (screen === 'hold') return <HoldPage />
     if (screen === 'admin') return <AdminPage />
     return <POSPage />
 }

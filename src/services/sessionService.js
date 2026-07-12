@@ -6,7 +6,7 @@ export async function closeSession(sessionId, totals) {
     return updateDoc(doc(db, 'sessions', sessionId), {
         status: 'closed',
         closedAt: serverTimestamp(),
-        totalSales: totals.totalBs,
+        totalSales: totals.totalUSD,
         totalTx: totals.totalTx,
     })
 }

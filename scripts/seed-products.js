@@ -1,4 +1,4 @@
-// scripts/seed-products.js — Cochinitos POS
+// scripts/seed-products.js — La KZ POS
 // Inserta 18 productos en Firestore (colección: products)
 // Uso: node scripts/seed-products.js
 
@@ -26,24 +26,24 @@ const app = initializeApp(firebaseConfig)
 const db = getFirestore(app)
 
 const products = [
-    { name: 'Cachapa con jamón y queso',                              emoji: '🥞', category: 'Otros', priceBS: 4200 },
-    { name: 'Cachapa con jamón, queso y cochino / pernil',            emoji: '🥩', category: 'Otros', priceBS: 6000 },
-    { name: 'Pan Pernil / Pan Parrilla (lechuga, tomate, salsas)',    emoji: '🥪', category: 'Otros', priceBS: 3000 },
-    { name: 'Arepa con pernil / Arepa con parrilla',                  emoji: '🫓', category: 'Otros', priceBS: 1800 },
-    { name: 'Arepa de chicharrón con queso guayanés',                 emoji: '🧀', category: 'Otros', priceBS: 1800 },
-    { name: 'Hallaquita de chicharrón (Sola)',                        emoji: '🫔', category: 'Otros', priceBS: 1200 },
-    { name: 'Pork Belly SOLO - 1 Kg',                                 emoji: '🥓', category: 'Otros', priceBS: 21000 },
-    { name: 'Pork Belly SOLO - 1/2 Kg',                               emoji: '🥓', category: 'Otros', priceBS: 10500 },
-    { name: 'Pork Belly SOLO - 250 gr',                               emoji: '🥓', category: 'Otros', priceBS: 5250 },
-    { name: 'Pork Belly (hallaquita y ensalada) - 1 Kg',             emoji: '🍽️', category: 'Otros', priceBS: 24000 },
-    { name: 'Pork Belly (hallaquita y ensalada) - 1/2 Kg',           emoji: '🍽️', category: 'Otros', priceBS: 12000 },
-    { name: 'Pork Belly (hallaquita y ensalada) - 250 gr',           emoji: '🍽️', category: 'Otros', priceBS: 6000 },
-    { name: 'Surtido de cochino (papas fritas) - 1 Kg',              emoji: '🍗', category: 'Otros', priceBS: 10800 },
-    { name: 'Surtido de cochino (papas fritas) - 1/2 Kg',            emoji: '🍗', category: 'Otros', priceBS: 5400 },
-    { name: 'Surtido de cochino (papas fritas) - 250 gr',            emoji: '🍗', category: 'Otros', priceBS: 2700 },
-    { name: 'Refresco 1 lt.',                                         emoji: '🥤', category: 'Otros', priceBS: 1200 },
-    { name: 'Ración de papas',                                        emoji: '🍟', category: 'Otros', priceBS: 1200 },
-    { name: 'Papelón con limón',                                      emoji: '🍋', category: 'Otros', priceBS: 600 },
+    { name: 'Cachapa con jamón y queso',                              emoji: '🥞', category: 'Otros', priceUSD: 5 },
+    { name: 'Cachapa con jamón, queso y cochino / pernil',            emoji: '🥩', category: 'Otros', priceUSD: 7 },
+    { name: 'Pan Pernil / Pan Parrilla (lechuga, tomate, salsas)',    emoji: '🥪', category: 'Otros', priceUSD: 4 },
+    { name: 'Arepa con pernil / Arepa con parrilla',                  emoji: '🫓', category: 'Otros', priceUSD: 3 },
+    { name: 'Arepa de chicharrón con queso guayanés',                 emoji: '🧀', category: 'Otros', priceUSD: 3 },
+    { name: 'Hallaquita de chicharrón (Sola)',                        emoji: '🫔', category: 'Otros', priceUSD: 2 },
+    { name: 'Pork Belly SOLO - 1 Kg',                                 emoji: '🥓', category: 'Otros', priceUSD: 25 },
+    { name: 'Pork Belly SOLO - 1/2 Kg',                               emoji: '🥓', category: 'Otros', priceUSD: 13 },
+    { name: 'Pork Belly SOLO - 250 gr',                               emoji: '🥓', category: 'Otros', priceUSD: 7 },
+    { name: 'Pork Belly (hallaquita y ensalada) - 1 Kg',             emoji: '🍽️', category: 'Otros', priceUSD: 28 },
+    { name: 'Pork Belly (hallaquita y ensalada) - 1/2 Kg',           emoji: '🍽️', category: 'Otros', priceUSD: 14 },
+    { name: 'Pork Belly (hallaquita y ensalada) - 250 gr',           emoji: '🍽️', category: 'Otros', priceUSD: 7 },
+    { name: 'Surtido de cochino (papas fritas) - 1 Kg',              emoji: '🍗', category: 'Otros', priceUSD: 13 },
+    { name: 'Surtido de cochino (papas fritas) - 1/2 Kg',            emoji: '🍗', category: 'Otros', priceUSD: 7 },
+    { name: 'Surtido de cochino (papas fritas) - 250 gr',            emoji: '🍗', category: 'Otros', priceUSD: 4 },
+    { name: 'Refresco 1 lt.',                                         emoji: '🥤', category: 'Otros', priceUSD: 2 },
+    { name: 'Ración de papas',                                        emoji: '🍟', category: 'Otros', priceUSD: 2 },
+    { name: 'Papelón con limón',                                      emoji: '🍋', category: 'Otros', priceUSD: 1 },
 ]
 
 async function seed() {
@@ -56,7 +56,7 @@ async function seed() {
             active: true,
             createdAt: serverTimestamp(),
         })
-        console.log(`  ✅ ${p.emoji}  ${p.name} — Bs ${p.priceBS.toLocaleString('es-VE')}  (${docRef.id})`)
+        console.log(`  ✅ ${p.emoji}  ${p.name} — $${p.priceUSD.toFixed(2)}  (${docRef.id})`)
     }
 
     console.log(`\n🎉 ${products.length} productos insertados en la colección "products".`)

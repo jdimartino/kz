@@ -1,8 +1,8 @@
-// src/context/AuthContext.jsx — Los 3 Cochinitos POS
+// src/context/AuthContext.jsx — La KZ POS
 // Usuario único hardcodeado "admin" — sin Firebase Auth
 import { createContext } from 'react'
 
-export const DEFAULT_USER = { uid: 'admin', role: 'admin', email: 'admin@cochinitos.app' }
+export const DEFAULT_USER = { uid: 'admin', role: 'admin', email: 'admin@lakz.app' }
 
 const AuthContext = createContext(null)
 

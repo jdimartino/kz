@@ -24,18 +24,22 @@ export async function nextInvoiceNumber() {
  * Guarda una orden completa en Firestore usando writeBatch (atómica).
  * Estructura: orders/{id} + subcol items/{} + subcol payments/{}
  */
-export async function saveOrder({ cashierId, sessionId, items, payment, invoiceNumber }) {
+export async function saveOrder({ cashierId, sessionId, items, payment, invoiceNumber, customerId }) {
     // 1. Crear doc principal de la orden
     const orderRef = doc(collection(db, 'orders'))
     const batch = writeBatch(db)
+    const totalUSD = items.reduce((s, i) => s + Number(i.subtotalUSD), 0)
 
     batch.set(orderRef, {
         cashierId,
         sessionId,
         status: 'paid',
         mode: 'fast',
-        totalCents: items.reduce((s, i) => s + i.subtotalCents, 0),
+        totalUSD,
+        customerId: customerId || null,
         paymentMethod: payment.method,
+        paymentRate: payment.paymentRate || null,
+        totalBsAtPayment: payment.totalBsAtPayment || null,
         ...(invoiceNumber != null && { invoiceNumber }),
         createdAt: serverTimestamp(),
     })
@@ -47,8 +51,9 @@ export async function saveOrder({ cashierId, sessionId, items, payment, invoiceN
             name: item.name,
             emoji: item.emoji,
             qty: item.qty,
-            unitPriceCents: item.unitPriceCents,
-            subtotalCents: item.subtotalCents,
+            unitPriceUSD: item.unitPriceUSD,
+            subtotalUSD: item.subtotalUSD,
+            log: item.log || [],
         })
     }
 
@@ -78,7 +83,8 @@ export async function saveHoldOrder({ cashierId, sessionId, items, client, notes
         mode: 'tab',
         client: { name: client.name.trim(), phone: client.phone.trim() },
         notes: notes?.trim() || '',
-        totalCents: items.reduce((s, i) => s + i.subtotalCents, 0),
+        totalUSD: items.reduce((s, i) => s + Number(i.subtotalUSD), 0),
+        itemCount: items.length,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
     })
@@ -89,8 +95,9 @@ export async function saveHoldOrder({ cashierId, sessionId, items, client, notes
             name: item.name,
             emoji: item.emoji,
             qty: item.qty,
-            unitPriceCents: item.unitPriceCents,
-            subtotalCents: item.subtotalCents,
+            unitPriceUSD: item.unitPriceUSD,
+            subtotalUSD: item.subtotalUSD,
+            log: item.log || [],
         })
     }
 
@@ -163,9 +170,9 @@ export async function voidOrder(orderId) {
 export async function updateHoldOrder(orderId, items) {
     const batch = writeBatch(db)
     const orderRef = doc(db, 'orders', orderId)
-    const totalCents = items.reduce((s, i) => s + i.subtotalCents, 0)
+    const totalUSD = items.reduce((s, i) => s + Number(i.subtotalUSD), 0)
 
-    batch.update(orderRef, { totalCents, updatedAt: serverTimestamp() })
+    batch.update(orderRef, { totalUSD, itemCount: items.length, updatedAt: serverTimestamp() })
 
     const existingSnap = await getDocs(collection(db, 'orders', orderId, 'items'))
     const existingIds = new Set(existingSnap.docs.map(d => d.id))
@@ -183,8 +190,9 @@ export async function updateHoldOrder(orderId, items) {
             name: item.name,
             emoji: item.emoji,
             qty: item.qty,
-            unitPriceCents: item.unitPriceCents,
-            subtotalCents: item.subtotalCents,
+            unitPriceUSD: item.unitPriceUSD,
+            subtotalUSD: item.subtotalUSD,
+            log: item.log || [],
         })
     }
 
@@ -201,8 +209,8 @@ export async function appendHoldOrder(orderId, items) {
         const orderSnap = await transaction.get(orderRef)
         if (!orderSnap.exists()) throw new Error('La orden no existe')
 
-        const currentTotal = orderSnap.data().totalCents || 0
-        const newItemsTotal = items.reduce((s, i) => s + i.subtotalCents, 0)
+        const currentTotal = orderSnap.data().totalUSD || 0
+        const newItemsTotal = items.reduce((s, i) => s + Number(i.subtotalUSD), 0)
 
         // Leer los ítems existentes dentro de la transacción
         const existingItems = {}
@@ -215,8 +223,10 @@ export async function appendHoldOrder(orderId, items) {
         }
 
         // Actualizar el doc principal
+        const newItemsCount = items.filter(item => !existingItems[item.productId]).length
         transaction.update(orderRef, {
-            totalCents: currentTotal + newItemsTotal,
+            totalUSD: currentTotal + newItemsTotal,
+            itemCount: (orderSnap.data().itemCount || 0) + newItemsCount,
             updatedAt: serverTimestamp(),
         })
 
@@ -228,15 +238,17 @@ export async function appendHoldOrder(orderId, items) {
             if (existing) {
                 transaction.update(itemRef, {
                     qty: existing.qty + item.qty,
-                    subtotalCents: existing.subtotalCents + item.subtotalCents,
+                    subtotalUSD: Number(existing.subtotalUSD) + Number(item.subtotalUSD),
+                    log: [...(existing.log || []), ...(item.log || [])],
                 })
             } else {
                 transaction.set(itemRef, {
                     name: item.name,
                     emoji: item.emoji,
                     qty: item.qty,
-                    unitPriceCents: item.unitPriceCents,
-                    subtotalCents: item.subtotalCents,
+            unitPriceUSD: item.unitPriceUSD,
+            subtotalUSD: item.subtotalUSD,
+            log: item.log || [],
                 })
             }
         }

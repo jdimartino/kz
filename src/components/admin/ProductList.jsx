@@ -4,7 +4,7 @@ import { useProducts } from '../../hooks/useProducts'
 import { deleteProduct, toggleProduct } from '../../services/productService'
 import ProductForm from './ProductForm'
 import { useToast } from '../Toast'
-import { formatBsNum } from '../../utils/money'
+
 
 export default function ProductList() {
     const { products, loading } = useProducts()
@@ -84,7 +84,7 @@ export default function ProductList() {
                                     <span className="text-2xl">{p.emoji}</span>
                                     <div className="flex-1 min-w-0">
                                         <p className="text-white font-semibold text-sm truncate">{p.name}</p>
-                                        <p className="text-slate-400 text-xs">Bs {formatBsNum(p.priceBS)}</p>
+                                        <p className="text-slate-400 text-xs">${p.priceUSD}</p>
                                     </div>
                                     <div className="flex items-center gap-1">
                                         {/* Toggle activo */}
