@@ -1,5 +1,5 @@
 // src/pages/POSPage.jsx
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useSession } from '../context/SessionContext'
 import { useCart } from '../context/CartContext'
@@ -8,13 +8,15 @@ import { useProducts } from '../hooks/useProducts'
 import { useCategories } from '../hooks/useCategories'
 import { useCustomers } from '../hooks/useCustomers'
 import { useOpenOrders } from '../hooks/useOpenOrders'
+import { useMultipleOpenOrderItems } from '../hooks/useOpenOrderItems'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { saveHoldOrder, appendHoldOrder, updateHoldOrder, getOrderItems } from '../services/orderService'
-import { createCustomer, findCustomerByPhone } from '../services/customerService'
+import { createCustomer, ensureCustomerByPhone, getCustomerHistory } from '../services/customerService'
 import { DEFAULT_USER } from '../context/AuthContext'
 import LogoIcon from '../components/LogoIcon'
 import { formatUSD } from '../utils/money'
 import { getCategoryColor } from '../utils/categoryColors'
+import { useToast } from '../components/Toast'
 
 export default function POSPage() {
     const { role } = useAuth()
@@ -23,23 +25,30 @@ export default function POSPage() {
     const { setScreen, setAdminTab, setHoldOrderId, selectedClient, setSelectedClient } = useNav()
     const { products, loading } = useProducts()
     const { categories } = useCategories()
-    const { customers } = useCustomers()
+    const { customers } = useCustomers(200)
     const { orders: holdOrders } = useOpenOrders()
+    const watchedOrderIds = useMemo(() => {
+        const ids = (holdOrders || []).slice(0, 5).map(o => o.id)
+        const current = selectedClient?.orderId
+        if (current && !ids.includes(current)) ids.unshift(current)
+        return [...new Set(ids.filter(Boolean))].slice(0, 5)
+    }, [holdOrders, selectedClient?.orderId])
+    const { itemsMap } = useMultipleOpenOrderItems(watchedOrderIds)
     const isOnline = useOnlineStatus()
+    const toast = useToast()
 
     const [posMode, setPosMode] = useState('select')
     const [search, setSearch] = useState('')
-    const [summaryItems, setSummaryItems] = useState([])
-    const [summaryLoading, setSummaryLoading] = useState(false)
     const [newClientOpen, setNewClientOpen] = useState(false)
     const [newName, setNewName] = useState('')
     const [newPhone, setNewPhone] = useState('')
     const [newNotes, setNewNotes] = useState('')
-    const [clientSaving, setClientSaving] = useState(false)
     const [cartCollapsed, setCartCollapsed] = useState(true)
     const [viewingClient, setViewingClient] = useState(null)
     const [clientOrders, setClientOrders] = useState([])
     const [ordersLoading, setOrdersLoading] = useState(false)
+    const [pendingClientCreation, setPendingClientCreation] = useState(null)
+    const [expandedLogs, setExpandedLogs] = useState({})
 
     const activeProducts = products.filter(p => p.active)
 
@@ -52,6 +61,21 @@ export default function POSPage() {
         })
         return Object.entries(map)
     }, [activeProducts])
+
+    // Cargar cliente pendiente de localStorage y reintentar cuando hay conexión
+    useEffect(() => {
+        const saved = localStorage.getItem('pendingClientCreation')
+        if (saved) {
+            const parsed = JSON.parse(saved)
+            setPendingClientCreation(parsed)
+        }
+    }, [])
+
+    useEffect(() => {
+        if (isOnline && pendingClientCreation) {
+            createClientInBackground(pendingClientCreation)
+        }
+    }, [isOnline, pendingClientCreation])
 
     // Guardia: si no hay sesión activa
     if (session?.status !== 'open' && !loading) {
@@ -78,6 +102,7 @@ export default function POSPage() {
                             <LogoIcon className="w-4 h-4 inline-block" /> La KZ POS
                             {!isOnline && <span className="ml-2 text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/20">Offline</span>}
                         </p>
+                        <p className="text-slate-400 text-[11px] leading-none mt-1">by #JDMRules</p>
                     </div>
                     <div className="flex items-center gap-2">
                         {role === 'admin' && (
@@ -85,7 +110,7 @@ export default function POSPage() {
                         )}
                     </div>
                 </header>
-                <main className="flex-1 flex flex-col items-center justify-center px-6 gap-6">
+                <main className="flex-1 flex flex-col items-center justify-start px-6 pt-6 gap-6">
                     <button
                         onClick={() => { setPosMode('client'); dispatch({ type: 'CLEAR_CART' }); setSelectedClient(null) }}
                         className="w-full max-w-sm bg-[#1E293B] hover:bg-[#2a3649] border border-white/10 rounded-3xl p-8 text-center transition-all active:scale-[0.98]"
@@ -109,80 +134,16 @@ export default function POSPage() {
 
     // ─── Modo: Lista de Clientes ─────────────────────────
     if (posMode === 'client') {
-        const filtered = customers.filter(c =>
-            !search || c.name?.toLowerCase().includes(search.toLowerCase()) || c.phone?.includes(search)
-        )
+        const norm = (p) => (p || '').replace(/\D/g, '')
+        const searchLower = search.toLowerCase().trim()
+        const searchDigits = search.replace(/\D/g, '')
+        const filtered = customers.filter(c => {
+            if (!search) return true
+            const nameMatch = c.name?.toLowerCase().includes(searchLower)
+            const phoneMatch = c.phone?.includes(search) || norm(c.phone).includes(searchDigits)
+            return nameMatch || phoneMatch
+        })
         const openOrders = holdOrders.filter(o => o.status === 'open')
-        const handleSelectClient = async (client) => {
-            // Buscar customerId real desde la lista de clientes frecuentes
-            const matched = customers.find(c => c.phone === client.phone)
-            const resolvedClient = matched
-                ? { ...client, id: matched.id }
-                : { ...client, id: null }
-            const openOrder = openOrders.find(o => o.client?.name === client.name && o.client?.phone === client.phone)
-            setSelectedClient({ ...resolvedClient, orderId: openOrder?.id || client.orderId })
-            if (openOrder) {
-                setSummaryLoading(true)
-                setPosMode('client-summary')
-                try {
-                    const orderItems = await getOrderItems(openOrder.id)
-                    setSummaryItems(orderItems)
-                } catch {
-                    setSummaryItems([])
-                } finally {
-                    setSummaryLoading(false)
-                }
-            } else {
-                dispatch({ type: 'CLEAR_CART' })
-                setPosMode('client-products')
-            }
-        }
-
-        const handleNewClient = async () => {
-            if (!newName.trim() || !newPhone.trim()) return
-            setClientSaving(true)
-            try {
-                const existing = await findCustomerByPhone(newPhone.trim())
-                if (existing) {
-                    setSelectedClient(existing)
-                    setNewClientOpen(false)
-                    setNewName('')
-                    setNewPhone('')
-                    setNewNotes('')
-                    dispatch({ type: 'CLEAR_CART' })
-                    setPosMode('client-products')
-                    return
-                }
-                const created = await createCustomer({ name: newName, phone: newPhone, notes: newNotes })
-                setSelectedClient(created)
-                setNewClientOpen(false)
-                setNewName('')
-                setNewPhone('')
-                setNewNotes('')
-                dispatch({ type: 'CLEAR_CART' })
-                setPosMode('client-products')
-            } catch (err) {
-                console.error(err)
-            } finally {
-                setClientSaving(false)
-            }
-        }
-
-        const handleViewHistory = async (client) => {
-            setViewingClient(client)
-            setOrdersLoading(true)
-            try {
-                const { getCustomerHistory } = await import('../services/customerService')
-                const ordersList = await getCustomerHistory(client.id)
-                setClientOrders(ordersList)
-            } catch (err) {
-                console.error(err)
-                setClientOrders([])
-            } finally {
-                setOrdersLoading(false)
-            }
-        }
-
         const openClients = openOrders.map(o => ({
             id: null,
             name: o.client?.name || '—',
@@ -192,6 +153,89 @@ export default function POSPage() {
             createdAt: o.createdAt,
             orderId: o.id,
         }))
+        const filteredOpens = openClients.filter(o => {
+            if (!search) return true
+            const nameMatch = o.name?.toLowerCase().includes(searchLower)
+            const phoneMatch = o.phone?.includes(search) || norm(o.phone).includes(searchDigits)
+            return nameMatch || phoneMatch
+        })
+        const openPhones = new Set(openClients.map(o => o.phone))
+        const filteredNonOpen = filtered.filter(c => !openPhones.has(c.phone))
+
+        const handleSelectClient = (client) => {
+            const matched = customers.find(c => norm(c.phone) === norm(client.phone))
+            const resolvedClient = matched
+                ? { ...client, id: matched.id }
+                : { ...client, id: null }
+            const openOrder = openOrders.find(o =>
+                norm(o.client?.phone) === norm(client.phone) ||
+                (o.client?.name || '').toLowerCase() === (client.name || '').toLowerCase()
+            )
+            setSelectedClient({ ...resolvedClient, orderId: openOrder?.id || client.orderId })
+            if (openOrder) {
+                setPosMode('client-summary')
+            } else {
+                dispatch({ type: 'CLEAR_CART' })
+                setPosMode('client-products')
+            }
+        }
+
+        const createClientInBackground = async (clientData) => {
+            try {
+                const created = await createCustomer(clientData)
+                localStorage.removeItem('pendingClientCreation')
+                setPendingClientCreation(null)
+                setSelectedClient(created)
+            } catch (err) {
+                console.error(err)
+                // Reintentar cuando vuelva la conexión (manejado por useEffect)
+            }
+        }
+
+        const handleNewClient = () => {
+            if (!newName.trim() || !newPhone.trim()) return
+
+            const clientData = {
+                name: newName.trim(),
+                phone: newPhone.trim(),
+                notes: newNotes.trim()
+            }
+
+            // Optimistic UI - cerrar inmediatamente
+            setNewClientOpen(false)
+            setNewName('')
+            setNewPhone('')
+            setNewNotes('')
+            dispatch({ type: 'CLEAR_CART' })
+            setSelectedClient({ ...clientData, id: null })
+            setPosMode('client-products')
+
+            // Crear en segundo plano
+            createClientInBackground(clientData).catch(() => {
+                // Guardar pendiente en localStorage para reintentos
+                localStorage.setItem('pendingClientCreation', JSON.stringify(clientData))
+                setPendingClientCreation(clientData)
+            })
+        }
+
+        const handleViewHistory = async (client) => {
+            if (!client?.id) {
+                toast.error('Este cliente no tiene historial registrado.')
+                return
+            }
+            setViewingClient(client)
+            setOrdersLoading(true)
+            try {
+                const ordersList = await getCustomerHistory(client.id)
+                setClientOrders(ordersList)
+            } catch (err) {
+                console.error(err)
+                toast.error('Error al cargar el historial.')
+                setClientOrders([])
+            } finally {
+                setOrdersLoading(false)
+            }
+        }
 
         if (viewingClient) {
             return (
@@ -241,7 +285,15 @@ export default function POSPage() {
             <div className="min-h-screen bg-[#0F172A] flex flex-col">
                 <header className="bg-[#1E293B] border-b border-white/5 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
                     <button onClick={() => setPosMode('select')} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-bold text-base px-5 py-3 rounded-xl transition-all">← Inicio</button>
-                    <p className="text-white font-bold text-sm">🍽️ Clientes</p>
+                     <div className="flex items-center gap-2">
+                         <p className="text-white font-bold text-sm">🍽️ Clientes</p>
+                         {pendingClientCreation && (
+                             <div className="flex items-center gap-1 text-[10px] text-blue-400">
+                                 <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
+                                 Creando cliente...
+                             </div>
+                         )}
+                     </div>
                     <button onClick={() => setNewClientOpen(true)} className="text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-xl transition-all">➕ Nuevo</button>
                 </header>
 
@@ -255,12 +307,12 @@ export default function POSPage() {
                 </div>
 
                 <main className="flex-1 px-4 pt-3 space-y-4 overflow-auto pb-8">
-                    {/* Pestañas abiertas */}
-                    {openClients.length > 0 && !search && (
+                    {/* Pestañas abiertas (siempre visibles y filtrables) */}
+                    {filteredOpens.length > 0 && (
                         <div>
                             <p className="text-green-400 text-xs font-bold uppercase tracking-wider mb-2">🟢 Pestañas Abiertas</p>
                             <div className="space-y-2">
-                                {openClients.map(o => (
+                                {filteredOpens.map(o => (
                                     <button key={o.orderId} onClick={() => handleSelectClient({ id: o.id, name: o.name, phone: o.phone, orderId: o.orderId })}
                                         className="w-full bg-green-500/5 border border-green-500/10 rounded-2xl px-4 py-3 flex items-center justify-between text-left active:scale-[0.99] transition-all"
                                     >
@@ -278,16 +330,16 @@ export default function POSPage() {
                         </div>
                     )}
 
-                    {/* Últimos clientes */}
+                    {/* Últimos clientes (sin duplicar los que tienen pestaña abierta) */}
                     <div>
                         <p className="text-blue-400 text-xs font-bold uppercase tracking-wider mb-2">🔵 Últimos Clientes</p>
-                        {filtered.length === 0 ? (
+                        {filteredNonOpen.length === 0 ? (
                             <div className="bg-[#1E293B] rounded-2xl p-6 text-center border border-white/5">
                                 <p className="text-slate-500 text-sm">Sin resultados</p>
                             </div>
                         ) : (
                             <div className="space-y-2">
-                                {filtered.map(c => (
+                                {filteredNonOpen.map(c => (
                                     <div key={c.id} className="bg-[#1E293B] rounded-2xl px-4 py-3 flex items-center justify-between border border-white/5">
                                         <div className="flex-1 min-w-0">
                                             <p className="text-white font-semibold text-sm truncate">{c.name}</p>
@@ -296,8 +348,8 @@ export default function POSPage() {
                                             <p className="text-slate-600 text-[10px]">{c.totalOrders || 0} visitas · {formatUSD(c.totalSpent || 0)}</p>
                                         </div>
                                         <div className="flex gap-1 shrink-0 ml-2">
-                                            <button onClick={() => handleViewHistory(c)} className="text-[11px] font-bold px-2 py-1.5 rounded-lg bg-slate-600/20 text-slate-400 hover:bg-slate-600/30 transition-colors">📋</button>
-                                            <button onClick={() => handleSelectClient(c)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition-colors">Seleccionar</button>
+                                             <button onClick={() => handleViewHistory(c)} className="text-base font-bold w-10 h-10 rounded-lg bg-slate-600/20 text-slate-400 hover:bg-slate-600/30 transition-colors flex items-center justify-center">📋</button>
+                                             <button onClick={() => handleSelectClient(c)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition-colors">Seleccionar</button>
                                         </div>
                                     </div>
                                 ))}
@@ -308,7 +360,7 @@ export default function POSPage() {
 
                 {/* Modal nuevo cliente */}
                 {newClientOpen && (
-                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-4" onClick={() => setNewClientOpen(false)}>
+                     <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/70 p-4 pt-8 sm:pt-4" onClick={() => setNewClientOpen(false)}>
                         <div className="bg-[#1E293B] rounded-[24px] w-full max-w-md p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
                             <h2 className="text-lg font-bold text-white mb-5">✏️ Nuevo Cliente</h2>
                             <div className="space-y-4">
@@ -326,8 +378,8 @@ export default function POSPage() {
                                 </div>
                                 <div className="flex gap-3 pt-2">
                                     <button onClick={() => setNewClientOpen(false)} className="btn-secondary flex-1">Cancelar</button>
-                                    <button onClick={handleNewClient} disabled={clientSaving || !newName.trim() || !newPhone.trim()} className="btn-primary flex-1">
-                                        {clientSaving ? 'Guardando...' : 'Crear y Asignar'}
+                                    <button onClick={handleNewClient} disabled={!newName.trim() || !newPhone.trim()} className="btn-primary flex-1">
+                                        Crear y Asignar
                                     </button>
                                 </div>
                             </div>
@@ -341,10 +393,11 @@ export default function POSPage() {
     // ─── Modo: Resumen del Cliente ──────────────────────
     if (posMode === 'client-summary') {
         const rate = session?.exchangeRate || null
+        const displayItems = selectedClient?.orderId ? (itemsMap[selectedClient.orderId] || []) : []
 
         const handleGoToProducts = () => {
             dispatch({ type: 'CLEAR_CART' })
-            summaryItems.forEach(item => {
+            displayItems.forEach(item => {
                 dispatch({ type: 'ADD_ITEM', payload: { id: item.productId, name: item.name, emoji: item.emoji, priceUSD: item.unitPriceUSD } })
                 if (item.qty > 1) {
                     for (let i = 1; i < item.qty; i++) {
@@ -356,43 +409,50 @@ export default function POSPage() {
         }
 
         const whatsappPhone = selectedClient?.phone?.replace(/^0/, '58')
-        const summaryTotal = summaryItems.reduce((s, i) => s + Number(i.subtotalUSD), 0)
+        const summaryTotal = displayItems.reduce((s, i) => s + Number(i.subtotalUSD), 0)
         const summaryTotalBs = rate ? summaryTotal * rate : 0
 
         const handleQtyChange = async (productId, delta) => {
-            const newItems = summaryItems.map(item => {
+            const newItems = displayItems.map(item => {
                 if (item.productId !== productId) return item
                 const newQty = item.qty + delta
                 if (newQty <= 0) return null
+                const now = Date.now()
+                const log = [...(item.log || [])]
+                const lastEntry = log.length > 0 ? log[log.length - 1] : null
+                if (lastEntry && (now - lastEntry.addedAt < 2000) && Math.sign(lastEntry.qty) === Math.sign(delta)) {
+                    log[log.length - 1] = { qty: lastEntry.qty + delta, addedAt: now }
+                } else {
+                    log.push({ qty: delta, addedAt: now })
+                }
                 return {
                     ...item,
                     qty: newQty,
                     subtotalUSD: newQty * item.unitPriceUSD,
-                    log: [...(item.log || []), { qty: delta, addedAt: Date.now() }],
+                    log,
                 }
             }).filter(Boolean)
-            setSummaryItems(newItems)
             try {
                 await updateHoldOrder(selectedClient?.orderId, newItems)
             } catch (err) {
                 console.error(err)
+                toast.error('Error al actualizar la cantidad.')
             }
         }
 
         const handleRemoveItem = async (productId) => {
-            const newItems = summaryItems
-                .filter(item => item.productId !== productId)
-            setSummaryItems(newItems)
+            const newItems = displayItems.filter(item => item.productId !== productId)
             try {
                 await updateHoldOrder(selectedClient?.orderId, newItems)
             } catch (err) {
                 console.error(err)
+                toast.error('Error al eliminar el producto.')
             }
         }
 
         const handleWhatsAppSummary = () => {
             if (!whatsappPhone) return
-            const lines = summaryItems.map(i => `${i.emoji} ${i.name} x${i.qty} — ${formatUSD(i.subtotalUSD)}`).join('\n')
+            const lines = displayItems.map(i => `${i.emoji} ${i.name} x${i.qty} — ${formatUSD(i.subtotalUSD)}`).join('\n')
             const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${selectedClient?.name}*, aquí el resumen:\n\n${lines}\n\n💵 *Total: ${formatUSD(summaryTotal)}*\n\n*Datos del Pago Movil*\n📱 04122098241\nV-22034344\n🏦 0134 (Banesco)\n\nGracias por tu visita 🙏`
             window.open(`https://wa.me/${whatsappPhone}?text=${encodeURIComponent(msg)}`, '_blank')
         }
@@ -400,7 +460,7 @@ export default function POSPage() {
         return (
             <div className="min-h-screen bg-[#0F172A] flex flex-col pb-32">
                 <header className="bg-[#1E293B] border-b border-white/5 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
-                    <button onClick={() => { setPosMode('client'); setSummaryItems([]) }} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-bold text-base px-5 py-3 rounded-xl transition-all">← Clientes</button>
+                    <button onClick={() => setPosMode('client')} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-bold text-base px-5 py-3 rounded-xl transition-all">← Clientes</button>
                     <p className="text-white font-bold text-sm">Resumen de Cuenta</p>
                     {rate && <p className="text-slate-500 text-[10px]">Bs {rate.toFixed(2)}</p>}
                 </header>
@@ -414,11 +474,7 @@ export default function POSPage() {
                     </div>
 
                     {/* Lista de productos */}
-                    {summaryLoading ? (
-                        <div className="flex items-center justify-center py-12">
-                            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                        </div>
-                    ) : summaryItems.length === 0 ? (
+                    {displayItems.length === 0 ? (
                         <div className="bg-[#1E293B] rounded-2xl p-6 text-center border border-white/5">
                             <p className="text-4xl mb-2">📭</p>
                             <p className="text-slate-500 text-sm">No hay productos en esta cuenta</p>
@@ -426,29 +482,47 @@ export default function POSPage() {
                     ) : (
                         <div className="bg-[#1E293B] rounded-2xl overflow-hidden border border-white/5">
                             <div className="px-4 py-3 border-b border-white/5">
-                                <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">🛒 Productos ({summaryItems.length})</p>
+                                <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">🛒 Productos ({displayItems.length})</p>
                             </div>
                             <div className="divide-y divide-white/5">
-                                {summaryItems.map(item => (
-                                    <div key={item.productId} className="px-4 py-3">
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-base shrink-0">{item.emoji}</span>
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-white text-xs font-semibold truncate">{item.name}</p>
-                                                <p className="text-slate-500 text-[10px]">{formatUSD(item.unitPriceUSD)} c/u</p>
-                                                {rate && <p className="text-slate-600 text-[10px]">Bs {(item.unitPriceUSD * rate).toFixed(2)} c/u</p>}
+                                {displayItems.map(item => (
+                                    <div key={item.productId} className="px-3 py-2.5">
+                                        <div className="grid grid-cols-[1fr_auto] gap-2">
+                                            <div className="flex items-start gap-2.5 min-w-0">
+                                                <span className="text-4xl shrink-0 leading-none mt-0.5">{item.emoji}</span>
+                                                <div className="min-w-0">
+                                                    <p className="text-white text-lg font-bold leading-tight truncate">{item.name}</p>
+                                                    <p className="text-slate-500 text-xs mt-0.5">{formatUSD(item.unitPriceUSD)} c/u{rate ? <span className="text-slate-600"> · Bs {(item.unitPriceUSD * rate).toFixed(2)} c/u</span> : null}</p>
+                                                </div>
                                             </div>
                                             <div className="text-right shrink-0">
-                                                <p className="text-blue-400 font-bold text-xs">{formatUSD(item.subtotalUSD)}</p>
-                                                {rate && <p className="text-slate-500 text-[10px]">Bs {(item.subtotalUSD * rate).toFixed(2)}</p>}
+                                                <p className="text-blue-400 font-extrabold text-3xl leading-none">{formatUSD(item.subtotalUSD)}</p>
+                                                {rate && <p className="text-slate-400 text-sm font-semibold mt-0.5">Bs {(item.subtotalUSD * rate).toFixed(2)}</p>}
                                             </div>
                                         </div>
-                                        {/* Log de tiempos (cada acción individual, bajas en rojo) */}
-                                        {item.log && item.log.length > 0 && (
-                                            <div className="mt-1.5 space-y-0.5">
+                                        <div className="flex items-center justify-between mt-1.5">
+                                            <div>
+                                                {item.log && item.log.length > 0 && (
+                                                    <button
+                                                        onClick={() => setExpandedLogs(prev => ({ ...prev, [item.productId]: !prev[item.productId] }))}
+                                                        className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors font-semibold"
+                                                    >
+                                                        {expandedLogs[item.productId] ? '🔼 Ocultar Detalles' : `📋 Detalles (${item.log.reduce((s, e) => s + e.qty, 0) > 0 ? '+' : ''}${item.log.reduce((s, e) => s + e.qty, 0)})`}
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <button onClick={() => handleQtyChange(item.productId, -1)} className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 text-white font-bold text-base transition-colors flex items-center justify-center">−</button>
+                                                <span className="text-white font-bold text-base w-8 text-center">{item.qty}</span>
+                                                <button onClick={() => handleQtyChange(item.productId, 1)} className="w-9 h-9 rounded-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 font-bold text-base transition-colors flex items-center justify-center">+</button>
+                                                <button onClick={() => handleRemoveItem(item.productId)} className="w-9 h-9 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-400 text-base transition-colors flex items-center justify-center ml-1">🗑️</button>
+                                            </div>
+                                        </div>
+                                        {expandedLogs[item.productId] && item.log && item.log.length > 0 && (
+                                            <div className="mt-1.5 space-y-0.5 pl-1">
                                                 {[...item.log].reverse().slice(0, 15).map((entry, idx) => (
                                                     <p key={idx} className={`text-[10px] ${entry.qty > 0 ? 'text-slate-600' : 'text-red-400'}`}>
-                                                        {entry.qty > 0 ? '+' : ''}{entry.qty} · {new Date(entry.addedAt).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                                        {(entry.qty > 0 ? '+' : '') + entry.qty} · {new Date(entry.addedAt).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}
                                                     </p>
                                                 ))}
                                                 {item.log.length > 15 && (
@@ -456,13 +530,6 @@ export default function POSPage() {
                                                 )}
                                             </div>
                                         )}
-                                        {/* Botones modificar */}
-                                        <div className="flex items-center justify-end gap-1 mt-2">
-                                            <button onClick={() => handleQtyChange(item.productId, -1)} className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-white font-bold text-sm transition-colors">−</button>
-                                            <span className="text-white font-bold text-sm w-8 text-center">{item.qty}</span>
-                                            <button onClick={() => handleQtyChange(item.productId, 1)} className="w-8 h-8 rounded-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 font-bold text-sm transition-colors">+</button>
-                                            <button onClick={() => handleRemoveItem(item.productId)} className="w-8 h-8 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm transition-colors ml-2">🗑️</button>
-                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -480,9 +547,20 @@ export default function POSPage() {
                 {/* Acciones fijas abajo */}
                 <div className="fixed bottom-0 left-0 right-0 z-20 p-4" style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
                     <div className="flex gap-2">
-                        <button onClick={() => { setPosMode('client'); setSummaryItems([]) }} className="flex-1 bg-slate-700 hover:bg-slate-600 active:scale-[0.98] text-white font-bold py-3 px-3 rounded-xl transition-all text-sm">← Volver</button>
+                         <button onClick={() => setPosMode('client')} className="flex-1 bg-slate-700 hover:bg-slate-600 active:scale-[0.98] text-white font-bold py-3 px-3 rounded-xl transition-all text-sm">← Volver</button>
                         <button onClick={handleGoToProducts} className="flex-[2] bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white font-extrabold py-3 px-5 rounded-xl transition-all shadow-lg shadow-blue-600/30 text-sm">➕ Agregar Productos</button>
-                        <button onClick={() => { setHoldOrderId(selectedClient?.orderId); setScreen('ticket') }} className="flex-1 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-extrabold py-3 px-3 rounded-xl transition-all text-sm">💳 Cobrar</button>
+                        <button onClick={() => {
+                            dispatch({ type: 'CLEAR_CART' })
+                            displayItems.forEach(item => {
+                                dispatch({ type: 'ADD_ITEM', payload: { id: item.productId, name: item.name, emoji: item.emoji, priceUSD: item.unitPriceUSD } })
+                                if (item.qty > 1) {
+                                    for (let i = 1; i < item.qty; i++) {
+                                        dispatch({ type: 'ADD_ITEM', payload: { id: item.productId, name: item.name, emoji: item.emoji, priceUSD: item.unitPriceUSD } })
+                                    }
+                                }
+                            })
+                            setHoldOrderId(selectedClient?.orderId); setScreen('ticket')
+                        }} className="flex-1 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-extrabold py-3 px-3 rounded-xl transition-all text-sm">💳 Cobrar</button>
                         <button onClick={handleWhatsAppSummary} className="flex-1 bg-green-600/15 hover:bg-green-600/25 border border-green-500/20 active:scale-[0.98] text-green-400 font-bold py-3 px-3 rounded-xl transition-all text-sm">📱 WhatsApp</button>
                     </div>
                 </div>
@@ -499,6 +577,9 @@ export default function POSPage() {
         try {
             if (client?.orderId) {
                 await appendHoldOrder(client.orderId, items)
+                if (client?.phone) {
+                    ensureCustomerByPhone({ name: client.name, phone: client.phone, notes: client.notes }).catch(() => {})
+                }
             } else {
                 const id = await saveHoldOrder({
                     cashierId: DEFAULT_USER.uid,
@@ -508,10 +589,14 @@ export default function POSPage() {
                     notes: client?.notes || '',
                 })
                 setSelectedClient({ ...client, orderId: id })
+                if (client?.phone) {
+                    ensureCustomerByPhone({ name: client.name, phone: client.phone, notes: client.notes }).catch(() => {})
+                }
             }
             dispatch({ type: 'CLEAR_CART' })
         } catch (err) {
             console.error(err)
+            toast.error('Error al guardar la cuenta. Intenta de nuevo.')
         }
     }
 
@@ -528,6 +613,7 @@ export default function POSPage() {
             window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank')
         } catch (err) {
             console.error(err)
+            toast.error('Error al abrir WhatsApp.')
         }
     }
 
@@ -546,15 +632,23 @@ export default function POSPage() {
             <header className="bg-[#1E293B] border-b border-white/5 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
                 <div className="flex items-center gap-2">
                     {isClientMode ? (
-                        <button onClick={() => { handleSaveTab(); setPosMode('client') }} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-bold text-base px-5 py-3 rounded-xl transition-all">← Clientes</button>
+                        <button onClick={() => { handleSaveTab(); setPosMode('client') }} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-bold text-base px-5 py-3 rounded-xl transition-all">💾 Guardar y Regresar</button>
                     ) : (
                         <button onClick={() => setPosMode('select')} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-bold text-base px-5 py-3 rounded-xl transition-all">← Inicio</button>
                     )}
                 </div>
                 <div className="text-right">
-                    {isClientMode && client && (
-                        <p className="text-white text-xs font-semibold truncate max-w-[140px]">{client.name}</p>
-                    )}
+                     {isClientMode && client && (
+                         <div className="flex items-center gap-1.5">
+                             <p className="text-white text-xs font-semibold truncate max-w-[140px]">{client.name}</p>
+                             {pendingClientCreation && (
+                                 <div className="flex items-center gap-1 text-[10px] text-blue-400">
+                                     <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
+                                     Creando...
+                                 </div>
+                             )}
+                         </div>
+                     )}
                     <p className="text-blue-400 font-extrabold text-lg leading-none">{formatUSD(totalUSD)}</p>
                 </div>
             </header>
@@ -655,19 +749,19 @@ function ProductCard({ product, qty, onAdd, onRemove, categoryColor }) {
     const { bg = 'bg-[#1E293B]', border = 'border-white/5' } = categoryColor || {}
     return (
         <div
-            className={`${bg} rounded-2xl p-3 relative flex flex-col transition-all border ${qty > 0 ? 'border-blue-500/40' : border} ${qty === 0 ? 'cursor-pointer active:scale-[0.97]' : ''}`}
+            className={`${bg} rounded-2xl p-4 relative flex flex-col transition-all border ${qty > 0 ? 'border-blue-500/40' : border} ${qty === 0 ? 'cursor-pointer active:scale-[0.97]' : ''}`}
             onClick={qty === 0 ? onAdd : undefined}
         >
             {qty > 0 && (
-                <span className="absolute top-1 right-1 bg-blue-600 text-white text-sm font-extrabold w-8 h-8 rounded-full flex items-center justify-center shadow-lg">{qty}</span>
+                <span className="absolute top-1 right-1 bg-blue-600 text-white text-base font-extrabold w-10 h-10 rounded-full flex items-center justify-center shadow-lg">{qty}</span>
             )}
             <div className="text-3xl text-center mt-1 mb-2">{product.emoji}</div>
-            <p className="text-white text-xs font-semibold text-center leading-tight mb-0.5 line-clamp-2">{product.name}</p>
-            <p className="text-blue-400 text-sm font-extrabold text-center mb-2">${(product.priceUSD || 0).toFixed(2)}</p>
+            <p className="text-white text-base font-bold text-center leading-tight mb-1 line-clamp-2">{product.name}</p>
+            <p className="text-blue-400 text-base font-extrabold text-center mb-2">${(product.priceUSD || 0).toFixed(2)}</p>
             {qty > 0 && (
-                <div className="mt-auto pt-2 flex gap-1">
-                    <button onClick={(e) => { e.stopPropagation(); onRemove(); }} className="flex-1 bg-white/5 hover:bg-white/10 text-white font-bold py-2 rounded-xl text-sm transition-colors active:scale-95">−</button>
-                    <button onClick={(e) => { e.stopPropagation(); onAdd(); }} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-xl text-sm transition-colors active:scale-95">+</button>
+                <div className="mt-auto pt-2 flex gap-1.5">
+                    <button onClick={(e) => { e.stopPropagation(); onRemove(); }} className="flex-1 bg-white/5 hover:bg-white/10 text-white font-bold py-2.5 rounded-xl text-sm transition-colors active:scale-95">−</button>
+                    <button onClick={(e) => { e.stopPropagation(); onAdd(); }} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 rounded-xl text-sm transition-colors active:scale-95">+</button>
                 </div>
             )}
         </div>
