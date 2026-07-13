@@ -43,3 +43,28 @@ export async function getCustomerHistory(customerId) {
     const snap = await getDocs(q)
     return snap.docs.map(d => ({ id: d.id, ...d.data() }))
 }
+
+export async function ensureCustomerByPhone({ name, phone, notes = '' }) {
+    const trimmedPhone = (phone || '').trim()
+    if (!trimmedPhone) return null
+    const existing = await findCustomerByPhone(trimmedPhone)
+    if (existing) {
+        try {
+            await updateDoc(doc(db, 'customers', existing.id), {
+                lastVisit: serverTimestamp(),
+                ...(name && name.trim() !== existing.name ? { name: name.trim() } : {})
+            })
+        } catch {}
+        return existing
+    }
+    return createCustomer({ name, phone: trimmedPhone, notes })
+}
+
+export async function updateCustomer(customerId, { name, phone, notes }) {
+    const ref = doc(db, 'customers', customerId)
+    await updateDoc(ref, {
+        name: name.trim(),
+        phone: phone.trim(),
+        notes: notes?.trim() || '',
+    })
+}

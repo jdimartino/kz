@@ -1,4 +1,4 @@
-// src/context/AuthContext.jsx — La KZ POS
+// src/context/AuthContext.jsx — La KZ POS — by #JDMRules
 // Usuario único hardcodeado "admin" — sin Firebase Auth
 import { createContext } from 'react'
 

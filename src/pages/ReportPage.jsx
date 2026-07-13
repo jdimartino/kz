@@ -99,6 +99,7 @@ export default function ReportPage() {
             `\n*Detalle de Órdenes:*`,
             orderLines,
             `\n💵 *Total Ventas: ${formatUSD(totalUSDSum)}*`,
+            `\n_La KZ POS by #JDMRules_`,
         ].join('\n')
 
         window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')

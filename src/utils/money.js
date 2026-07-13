@@ -1,4 +1,4 @@
-// src/utils/money.js — La KZ POS
+// src/utils/money.js — La KZ POS — by #JDMRules
 // Todas las operaciones en USD con 2 decimales
 
 export const toUSD = (amount) => Number(Number(amount).toFixed(2))

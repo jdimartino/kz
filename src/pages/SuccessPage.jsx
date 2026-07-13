@@ -9,7 +9,7 @@ export default function SuccessPage() {
     const pay = lastOrderData?.payment
 
     return (
-        <div className="min-h-screen bg-[#0F172A] flex flex-col items-center justify-center p-6 text-center">
+        <div className="min-h-screen bg-[#0F172A] flex flex-col items-center justify-start p-6 pt-12 text-center">
 
             {/* Icono animado */}
             <div className="relative mb-6">

@@ -1,4 +1,4 @@
-// scripts/clean-firestore.js — La KZ POS
+// scripts/clean-firestore.js — La KZ POS — by #JDMRules
 // Lee y elimina todas las colecciones de Firestore
 // Dry-run: node scripts/clean-firestore.js           (solo muestra)
 // Ejecutar: node scripts/clean-firestore.js --confirm  (borra todo)

@@ -1,11 +1,13 @@
 // src/pages/HoldPage.jsx
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useCart } from '../context/CartContext'
 import { useSession } from '../context/SessionContext'
 import { DEFAULT_USER } from '../context/AuthContext'
 import { useNav } from '../context/NavigationContext'
 import { useOpenOrders } from '../hooks/useOpenOrders'
+import { useMultipleOpenOrderItems } from '../hooks/useOpenOrderItems'
 import { saveHoldOrder, reopenOrder, cancelHoldOrder, appendHoldOrder, getOrderItems, updateHoldOrder } from '../services/orderService'
+import { ensureCustomerByPhone } from '../services/customerService'
 import { formatUSD } from '../utils/money'
 import { useToast } from '../components/Toast'
 
@@ -14,6 +16,8 @@ export default function HoldPage() {
     const { session } = useSession()
     const { setScreen, setHoldOrderId, holdOrderId } = useNav()
     const { orders, loading } = useOpenOrders()
+    const watchedIds = orders.slice(0, 5).map(o => o.id)
+    const { itemsMap } = useMultipleOpenOrderItems(watchedIds)
     const toast = useToast()
 
     const [name, setName] = useState('')
@@ -25,16 +29,8 @@ export default function HoldPage() {
     const [selectedOrderId, setSelectedOrderId] = useState('')
     const [orderItems, setOrderItems] = useState({})
 
-    // Cargar items de cada orden automáticamente al recibirlas
-    useEffect(() => {
-        orders.forEach(order => {
-            if (!orderItems[order.id]) {
-                getOrderItems(order.id).then(items => {
-                    setOrderItems(prev => ({ ...prev, [order.id]: items }))
-                })
-            }
-        })
-    }, [orders])
+    // Live items for top 5 via itemsMap; fallback for others
+    // (the effect below is kept for >5 or initial)
 
     const hasItems = items.length > 0
 
@@ -54,6 +50,7 @@ export default function HoldPage() {
                     client: { name, phone },
                     notes,
                 })
+                ensureCustomerByPhone({ name, phone, notes }).catch(() => {})
             } else {
                 await appendHoldOrder(selectedOrderId, items)
             }
@@ -159,7 +156,7 @@ export default function HoldPage() {
     const handleNotify = async (order) => {
         const phone = order.client?.phone?.replace(/^0/, '58')
         const totalUSDStr = formatUSD(order.totalUSD)
-        let items = orderItems[order.id]
+        let items = itemsMap[order.id] || orderItems[order.id]
         if (!items?.length) {
             items = await getOrderItems(order.id)
             setOrderItems(prev => ({ ...prev, [order.id]: items }))
@@ -167,7 +164,7 @@ export default function HoldPage() {
         const lines = items
             .map(i => `${i.emoji} ${i.name} x${i.qty} — ${formatUSD(i.subtotalUSD)}`)
             .join('\n')
-        const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${order.client?.name}*, aquí el resumen:\n\n${lines}\n\n💵 *Total: ${totalUSDStr}*\n\n*Datos del Pago Movil*\n📱 04122098241\nV-22034344\n🏦 0134 (Banesco)\n\nGracias por tu visita 🙏`
+        const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${order.client?.name}*, aquí el resumen:\n\n${lines}\n\n💵 *Total: ${totalUSDStr}*\n\n*Datos del Pago Movil*\n👤 Rafael Garrido\n📱 04143047502\nV-13536210\n🏦 0102 (Banco de Venezuela)\n\n_La KZ POS by #JDMRules_`
         window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank')
     }
 

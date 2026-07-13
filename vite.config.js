@@ -12,6 +12,7 @@ export default defineConfig({
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'La KZ POS',
+        // by #JDMRules
         short_name: 'La KZ',
         description: 'Sistema POS - La KZ',
         theme_color: '#0F172A',
@@ -22,6 +23,10 @@ export default defineConfig({
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
         ],
+      },
+      workbox: {
+        clientsClaim: true,
+        skipWaiting: true,
       },
     }),
   ],

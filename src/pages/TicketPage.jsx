@@ -127,7 +127,7 @@ export default function TicketPage() {
                     })),
                 }),
             }
-            const customerId = selectedClient?.id?.length > 20 ? selectedClient.id : null
+            const customerId = selectedClient?.id?.length >= 20 ? selectedClient.id : null
             const orderId = await saveOrder({
                 cashierId: DEFAULT_USER.uid,
                 sessionId: session.id,

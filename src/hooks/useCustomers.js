@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { collection, query, onSnapshot, orderBy, limit } from 'firebase/firestore'
 import { db } from '../firebase'
 
-export function useCustomers(max = 50) {
+export function useCustomers(max = 200) {
     const [customers, setCustomers] = useState([])
     const [loading, setLoading] = useState(true)
 

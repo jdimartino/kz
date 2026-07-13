@@ -119,6 +119,7 @@ export default function SessionPanel({ onSessionOpen }) {
                     <div>
                         <p className="text-green-400 font-bold text-lg">Caja Abierta</p>
                         <p className="text-slate-300 text-sm">Sesión activa — ID: {session.id.slice(0, 8)}</p>
+                        <p className="text-blue-400 text-sm font-semibold mt-1">💰 Tasa: Bs {session.exchangeRate?.toFixed(2)}</p>
                     </div>
                 </div>
 

@@ -1,4 +1,5 @@
 # La KZ POS
+by #JDMRules
 
 Sistema POS para La KZ.
 

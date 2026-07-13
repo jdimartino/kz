@@ -1,4 +1,4 @@
-// scripts/seed-products.js — La KZ POS
+// scripts/seed-products.js — La KZ POS — by #JDMRules
 // Inserta 18 productos en Firestore (colección: products)
 // Uso: node scripts/seed-products.js
 

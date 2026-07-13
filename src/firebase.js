@@ -1,4 +1,4 @@
-// src/firebase.js — La KZ POS
+// src/firebase.js — La KZ POS — by #JDMRules
 // Proyecto: kz-pos
 
 import { initializeApp } from 'firebase/app'

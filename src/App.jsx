@@ -5,6 +5,7 @@ import { CartProvider } from './context/CartContext'
 import { NavigationProvider, useNav } from './context/NavigationContext'
 import { ToastProvider } from './components/Toast'
 import ErrorBoundary from './components/ErrorBoundary'
+import UpdateBanner from './components/UpdateBanner'
 import POSPage from './pages/POSPage'
 import TicketPage from './pages/TicketPage'
 import SuccessPage from './pages/SuccessPage'
@@ -22,6 +23,7 @@ export default function App() {
     return (
         <ErrorBoundary>
             <ToastProvider>
+                <UpdateBanner />
                 <AuthProvider>
                     <SessionProvider>
                         <CartProvider>

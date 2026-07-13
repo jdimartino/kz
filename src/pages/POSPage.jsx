@@ -11,7 +11,7 @@ import { useOpenOrders } from '../hooks/useOpenOrders'
 import { useMultipleOpenOrderItems } from '../hooks/useOpenOrderItems'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { saveHoldOrder, appendHoldOrder, updateHoldOrder, getOrderItems } from '../services/orderService'
-import { createCustomer, ensureCustomerByPhone, getCustomerHistory } from '../services/customerService'
+import { createCustomer, ensureCustomerByPhone, getCustomerHistory, updateCustomer } from '../services/customerService'
 import { DEFAULT_USER } from '../context/AuthContext'
 import LogoIcon from '../components/LogoIcon'
 import { formatUSD } from '../utils/money'
@@ -49,6 +49,11 @@ export default function POSPage() {
     const [ordersLoading, setOrdersLoading] = useState(false)
     const [pendingClientCreation, setPendingClientCreation] = useState(null)
     const [expandedLogs, setExpandedLogs] = useState({})
+    const [editClientOpen, setEditClientOpen] = useState(false)
+    const [editClientData, setEditClientData] = useState(null)
+    const [editName, setEditName] = useState('')
+    const [editPhone, setEditPhone] = useState('')
+    const [editNotes, setEditNotes] = useState('')
 
     const activeProducts = products.filter(p => p.active)
 
@@ -237,6 +242,31 @@ export default function POSPage() {
             }
         }
 
+        const handleEditClient = (client) => {
+            if (!client?.id) {
+                toast.error('No se puede editar este cliente.')
+                return
+            }
+            setEditClientData(client)
+            setEditName(client.name || '')
+            setEditPhone(client.phone || '')
+            setEditNotes(client.notes || '')
+            setEditClientOpen(true)
+        }
+
+        const handleSaveEditClient = async () => {
+            if (!editName.trim() || !editPhone.trim() || !editClientData?.id) return
+            try {
+                await updateCustomer(editClientData.id, { name: editName, phone: editPhone, notes: editNotes })
+                toast.success('Cliente actualizado correctamente.')
+                setEditClientOpen(false)
+                setEditClientData(null)
+            } catch (err) {
+                console.error(err)
+                toast.error('Error al actualizar el cliente.')
+            }
+        }
+
         if (viewingClient) {
             return (
                 <div className="min-h-screen bg-[#0F172A] flex flex-col">
@@ -310,7 +340,7 @@ export default function POSPage() {
                     {/* Pestañas abiertas (siempre visibles y filtrables) */}
                     {filteredOpens.length > 0 && (
                         <div>
-                            <p className="text-green-400 text-xs font-bold uppercase tracking-wider mb-2">🟢 Pestañas Abiertas</p>
+                            <p className="text-green-400 text-xs font-bold uppercase tracking-wider mb-2">🟢 Cuentas Abiertas</p>
                             <div className="space-y-2">
                                 {filteredOpens.map(o => (
                                     <button key={o.orderId} onClick={() => handleSelectClient({ id: o.id, name: o.name, phone: o.phone, orderId: o.orderId })}
@@ -349,6 +379,7 @@ export default function POSPage() {
                                         </div>
                                         <div className="flex gap-1 shrink-0 ml-2">
                                              <button onClick={() => handleViewHistory(c)} className="text-base font-bold w-10 h-10 rounded-lg bg-slate-600/20 text-slate-400 hover:bg-slate-600/30 transition-colors flex items-center justify-center">📋</button>
+                                             <button onClick={() => handleEditClient(c)} className="text-base font-bold w-10 h-10 rounded-lg bg-slate-600/20 text-slate-400 hover:bg-slate-600/30 transition-colors flex items-center justify-center">✏️</button>
                                              <button onClick={() => handleSelectClient(c)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition-colors">Seleccionar</button>
                                         </div>
                                     </div>
@@ -380,6 +411,35 @@ export default function POSPage() {
                                     <button onClick={() => setNewClientOpen(false)} className="btn-secondary flex-1">Cancelar</button>
                                     <button onClick={handleNewClient} disabled={!newName.trim() || !newPhone.trim()} className="btn-primary flex-1">
                                         Crear y Asignar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Modal editar cliente */}
+                {editClientOpen && (
+                    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/70 p-4 pt-8 sm:pt-4" onClick={() => { setEditClientOpen(false); setEditClientData(null) }}>
+                        <div className="bg-[#1E293B] rounded-[24px] w-full max-w-md p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+                            <h2 className="text-lg font-bold text-white mb-5">✏️ Editar Cliente</h2>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="label-xs">Nombre</label>
+                                    <input value={editName} onChange={e => setEditName(e.target.value)} className="input-field mt-1" placeholder="Nombre del cliente" autoFocus />
+                                </div>
+                                <div>
+                                    <label className="label-xs">Teléfono</label>
+                                    <input value={editPhone} onChange={e => setEditPhone(e.target.value)} className="input-field mt-1" placeholder="0412-1234567" inputMode="tel" />
+                                </div>
+                                <div>
+                                    <label className="label-xs">Notas (opcional)</label>
+                                    <input value={editNotes} onChange={e => setEditNotes(e.target.value)} className="input-field mt-1" placeholder="ej. Hijo de Juan" />
+                                </div>
+                                <div className="flex gap-3 pt-2">
+                                    <button onClick={() => { setEditClientOpen(false); setEditClientData(null) }} className="btn-secondary flex-1">Cancelar</button>
+                                    <button onClick={handleSaveEditClient} disabled={!editName.trim() || !editPhone.trim()} className="btn-primary flex-1">
+                                        Guardar Cambios
                                     </button>
                                 </div>
                             </div>
@@ -453,7 +513,7 @@ export default function POSPage() {
         const handleWhatsAppSummary = () => {
             if (!whatsappPhone) return
             const lines = displayItems.map(i => `${i.emoji} ${i.name} x${i.qty} — ${formatUSD(i.subtotalUSD)}`).join('\n')
-            const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${selectedClient?.name}*, aquí el resumen:\n\n${lines}\n\n💵 *Total: ${formatUSD(summaryTotal)}*\n\n*Datos del Pago Movil*\n📱 04122098241\nV-22034344\n🏦 0134 (Banesco)\n\nGracias por tu visita 🙏`
+            const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${selectedClient?.name}*, aquí el resumen:\n\n${lines}\n\n💵 *Total: ${formatUSD(summaryTotal)}*\n\n*Datos del Pago Movil*\n👤 Rafael Garrido\n📱 04143047502\nV-13536210\n🏦 0102 (Banco de Venezuela)\n\n_La KZ POS by #JDMRules_`
             window.open(`https://wa.me/${whatsappPhone}?text=${encodeURIComponent(msg)}`, '_blank')
         }
 
@@ -609,7 +669,7 @@ export default function POSPage() {
             const order = holdOrders.find(o => o.id === orderId)
             const phone = client?.phone?.replace(/^0/, '58')
             const lines = orderItems.map(i => `${i.emoji} ${i.name} x${i.qty} — ${formatUSD(i.subtotalUSD)}`).join('\n')
-            const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${client?.name}*, aquí el resumen:\n\n${lines}\n\n💵 *Total: ${formatUSD(order?.totalUSD || totalUSD)}*\n\n*Datos del Pago Movil*\n📱 04122098241\nV-22034344\n🏦 0134 (Banesco)\n\nGracias por tu visita 🙏`
+            const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${client?.name}*, aquí el resumen:\n\n${lines}\n\n💵 *Total: ${formatUSD(order?.totalUSD || totalUSD)}*\n\n*Datos del Pago Movil*\n👤 Rafael Garrido\n📱 04143047502\nV-13536210\n🏦 0102 (Banco de Venezuela)\n\n_La KZ POS by #JDMRules_`
             window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank')
         } catch (err) {
             console.error(err)
