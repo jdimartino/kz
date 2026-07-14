@@ -6,7 +6,7 @@ import { DEFAULT_USER } from '../context/AuthContext'
 import { useNav } from '../context/NavigationContext'
 import { saveOrder, nextInvoiceNumber, completeHoldOrder } from '../services/orderService'
 import { formatUSD, formatBs, usdToBs, bsToUsd, calcChange } from '../utils/money'
-import { updateCustomerStats } from '../services/customerService'
+import { updateCustomerStats, deductCredit, findCustomerByPhone } from '../services/customerService'
 import { useToast } from '../components/Toast'
 
 const METHODS = [
@@ -37,10 +37,33 @@ export default function TicketPage() {
     const [invoiceNum, setInvoiceNum] = useState(null)
     const [reference, setReference] = useState('')
     const [mixedPayments, setMixedPayments] = useState([])
+    const [useCredit, setUseCredit] = useState(false)
+    const [creditBalance, setCreditBalance] = useState(0)
+    const [creditApplied, setCreditApplied] = useState(0)
 
     useEffect(() => {
         nextInvoiceNumber().then(setInvoiceNum).catch(() => {})
     }, [])
+
+    useEffect(() => {
+        const loadCredit = async () => {
+            if (selectedClient?.id && selectedClient.id.length >= 20) {
+                try {
+                    const customer = await findCustomerByPhone(selectedClient.phone)
+                    if (customer) setCreditBalance(customer.creditBalance || 0)
+                } catch {}
+            }
+        }
+        loadCredit()
+    }, [selectedClient])
+
+    useEffect(() => {
+        if (!useCredit) {
+            setCreditApplied(0)
+        } else if (creditBalance > 0) {
+            setCreditApplied(Math.min(creditBalance, totalUSD))
+        }
+    }, [useCredit, creditBalance, totalUSD])
 
     useEffect(() => {
         if (method !== 'mixed') {
@@ -49,6 +72,8 @@ export default function TicketPage() {
     }, [method])
 
     const totalBs = rate ? usdToBs(totalUSD, rate) : 0
+    const netTotal = Math.max(0, totalUSD - creditApplied)
+    const netTotalBs = rate ? usdToBs(netTotal, rate) : 0
 
     const mixedRemaining = useMemo(() => {
         if (method !== 'mixed') return null
@@ -57,7 +82,7 @@ export default function TicketPage() {
             const inBs = p.method === 'usd_cash' ? usdToBs(amount, rate) : amount
             return s + inBs
         }, 0)
-        const diff = totalBs - totalPaid
+        const diff = netTotalBs - totalPaid
         const covered = diff < 0.005
         return {
             remainingBs: Math.max(0, diff),
@@ -67,18 +92,18 @@ export default function TicketPage() {
             covered,
             totalPaid,
         }
-    }, [method, mixedPayments, totalBs, rate])
+    }, [method, mixedPayments, netTotalBs, rate])
 
     const change = useMemo(() => {
         if (method === 'bs_cash') {
             if (!paidBS) return null
-            const ch = calcChange(parseFloat(paidBS) || 0, totalBs)
+            const ch = calcChange(parseFloat(paidBS) || 0, netTotalBs)
             return ch > 0 ? { label: 'Vuelto', value: formatBs(ch) } : null
         }
         if (method === 'usd_cash') {
             if (!paidBS) return null
             const paidUSD = parseFloat(paidBS) || 0
-            const changeUSD = Math.max(0, paidUSD - totalUSD)
+            const changeUSD = Math.max(0, paidUSD - netTotal)
             if (changeUSD <= 0) return null
             return {
                 label: 'Vuelto',
@@ -87,18 +112,19 @@ export default function TicketPage() {
             }
         }
         return null
-    }, [method, paidBS, totalBs])
+    }, [method, paidBS, netTotalBs, netTotal, rate])
 
     const canPay = useCallback(() => {
         if (!session?.id) return false
         if (!rate) return false
+        if (netTotal <= 0) return true
         if (method === 'bs_cash') return true
-        if (method === 'usd_cash') return parseFloat(paidBS) >= totalUSD
+        if (method === 'usd_cash') return parseFloat(paidBS) >= netTotal
         if (method === 'pos_term') return true
         if (method === 'transfer') return true
         if (method === 'mixed') return !!mixedRemaining?.covered
         return false
-    }, [session?.id, method, paidBS, totalBs, mixedRemaining, rate])
+    }, [session?.id, method, paidBS, netTotalBs, netTotal, mixedRemaining, rate])
 
     const handlePay = async () => {
         if (!canPay()) return
@@ -111,14 +137,16 @@ export default function TicketPage() {
             const payment = {
                 method,
                 totalUSD,
-                totalBsAtPayment: totalBs,
+                netTotal,
+                creditApplied,
+                totalBsAtPayment: netTotalBs,
                 paymentRate: rate,
                 ...(method === 'bs_cash' && {
-                    paidBS: parseFloat(paidBS) || totalBs,
-                    changeBS: paidBS ? parseFloat(paidBS) - totalBs : 0,
+                    paidBS: parseFloat(paidBS) || netTotalBs,
+                    changeBS: paidBS ? parseFloat(paidBS) - netTotalBs : 0,
                 }),
-                ...(method === 'usd_cash' && { paidBS: parseFloat(paidBS), changeBS: parseFloat(paidBS) - totalBs }),
-                ...(method === 'pos_term' && { paidPOS: totalBs }),
+                ...(method === 'usd_cash' && { paidBS: parseFloat(paidBS), changeBS: parseFloat(paidBS) - netTotalBs }),
+                ...(method === 'pos_term' && { paidPOS: netTotalBs }),
                 ...(method === 'transfer' && { reference }),
                 ...(method === 'mixed' && {
                     breakdown: mixedPayments.map(p => ({
@@ -138,11 +166,15 @@ export default function TicketPage() {
             })
             if (customerId) {
                 await updateCustomerStats(customerId, { totalUSD }).catch(() => {})
+                if (creditApplied > 0) {
+                    await deductCredit(customerId, creditApplied, orderId).catch(() => {})
+                }
             }
             setOrderId(orderId)
             setLastOrderData({
                 items: [...items],
                 totalUSD,
+                creditApplied,
                 payment: { ...payment },
                 invoiceNumber: invoiceNum,
             })
@@ -193,9 +225,18 @@ export default function TicketPage() {
                     </p>
                 </div>
                 <div className="ml-auto text-right">
-                    <p className="text-blue-400 font-extrabold text-lg leading-none">{formatUSD(totalUSD)}</p>
-                    {totalBs > 0 && (
-                        <p className="text-slate-300 font-bold text-sm">{formatBs(totalBs)}</p>
+                    {creditApplied > 0 ? (
+                        <>
+                            <p className="text-green-400 font-extrabold text-lg leading-none">{formatUSD(netTotal)}</p>
+                            <p className="text-slate-500 text-[10px] line-through">{formatUSD(totalUSD)}</p>
+                        </>
+                    ) : (
+                        <>
+                            <p className="text-blue-400 font-extrabold text-lg leading-none">{formatUSD(totalUSD)}</p>
+                            {totalBs > 0 && (
+                                <p className="text-slate-300 font-bold text-sm">{formatBs(totalBs)}</p>
+                            )}
+                        </>
                     )}
                 </div>
             </header>
@@ -239,6 +280,48 @@ export default function TicketPage() {
                         </div>
                     </div>
                 </div>
+
+                {/* Crédito disponible */}
+                {creditBalance > 0 && (
+                    <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-blue-400 font-bold text-sm">💰 Crédito disponible</p>
+                                <p className="text-blue-300 text-xs">{formatUSD(creditBalance)}</p>
+                            </div>
+                            <button
+                                onClick={() => setUseCredit(!useCredit)}
+                                className={`relative w-12 h-7 rounded-full transition-colors ${useCredit ? 'bg-blue-600' : 'bg-slate-600'}`}
+                            >
+                                <div className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform ${useCredit ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                            </button>
+                        </div>
+                        {useCredit && (
+                            <div>
+                                <label className="label-xs">Monto a aplicar (USD)</label>
+                                <div className="relative mt-1">
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">$</span>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        max={Math.min(creditBalance, totalUSD)}
+                                        value={creditApplied}
+                                        onChange={e => {
+                                            const val = Math.min(parseFloat(e.target.value) || 0, creditBalance, totalUSD)
+                                            setCreditApplied(Math.max(0, val))
+                                        }}
+                                        className="input-field pl-10"
+                                    />
+                                </div>
+                                <div className="flex justify-between mt-2">
+                                    <button onClick={() => setCreditApplied(Math.min(creditBalance, totalUSD))} className="text-[10px] text-blue-400 font-bold">Aplicar todo</button>
+                                    <p className="text-slate-500 text-[10px]">Restante: {formatUSD(netTotal)}</p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Métodos de pago */}
                 <fieldset>
@@ -449,7 +532,10 @@ export default function TicketPage() {
                     disabled={!canPay() || saving}
                     className="w-full bg-green-600 hover:bg-green-500 active:scale-[0.98] text-white font-extrabold py-4 px-6 rounded-2xl transition-all shadow-2xl shadow-green-600/30 disabled:opacity-40 disabled:pointer-events-none text-lg"
                 >
-                    {saving ? 'Procesando...' : <><span>✅ Cobrar {formatUSD(totalUSD)}</span><br /><span className="text-lg opacity-80">{formatBs(totalBs)}</span></>}
+                    {saving ? 'Procesando...' : creditApplied > 0
+                        ? <><span>✅ Cobrar {formatUSD(netTotal)}</span><br /><span className="text-lg opacity-80">💰 Crédito: -{formatUSD(creditApplied)}</span></>
+                        : <><span>✅ Cobrar {formatUSD(totalUSD)}</span><br /><span className="text-lg opacity-80">{formatBs(totalBs)}</span></>
+                    }
                 </button>
             </div>
         </div>

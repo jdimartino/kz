@@ -86,7 +86,7 @@ export default function ReportPage() {
             .sort((a, b) => (a.invoiceNumber || 0) - (b.invoiceNumber || 0))
             .map((o, idx) => {
                 const num = o.invoiceNumber ? `#${String(o.invoiceNumber).padStart(4, '0')}` : `${idx + 1}`
-                const time = o.createdAt?.seconds ? new Date(o.createdAt.seconds * 1000).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }) : ''
+                const time = o.createdAt?.seconds ? new Date(o.createdAt.seconds * 1000).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date(o.createdAt.seconds * 1000).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' }) : ''
                 return `  ${num} ${time} — ${formatUSD(o.totalUSD || 0)}`
             })
             .join('\n')

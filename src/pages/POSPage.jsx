@@ -11,7 +11,7 @@ import { useOpenOrders } from '../hooks/useOpenOrders'
 import { useMultipleOpenOrderItems } from '../hooks/useOpenOrderItems'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { saveHoldOrder, appendHoldOrder, updateHoldOrder, getOrderItems } from '../services/orderService'
-import { createCustomer, ensureCustomerByPhone, getCustomerHistory, updateCustomer } from '../services/customerService'
+import { createCustomer, ensureCustomerByPhone, getCustomerHistory, updateCustomer, addCredit } from '../services/customerService'
 import { DEFAULT_USER } from '../context/AuthContext'
 import LogoIcon from '../components/LogoIcon'
 import { formatUSD } from '../utils/money'
@@ -54,6 +54,9 @@ export default function POSPage() {
     const [editName, setEditName] = useState('')
     const [editPhone, setEditPhone] = useState('')
     const [editNotes, setEditNotes] = useState('')
+    const [creditModalOpen, setCreditModalOpen] = useState(false)
+    const [creditClientData, setCreditClientData] = useState(null)
+    const [creditAmount, setCreditAmount] = useState('')
 
     const activeProducts = products.filter(p => p.active)
 
@@ -267,6 +270,21 @@ export default function POSPage() {
             }
         }
 
+        const handleAddCredit = async () => {
+            if (!creditClientData?.id || !creditAmount || parseFloat(creditAmount) <= 0) return
+            try {
+                const amount = parseFloat(creditAmount)
+                await addCredit(creditClientData.id, amount)
+                toast.success(`$${amount.toFixed(2)} abonados al crédito de ${creditClientData.name}`)
+                setCreditModalOpen(false)
+                setCreditClientData(null)
+                setCreditAmount('')
+            } catch (err) {
+                console.error(err)
+                toast.error('Error al abonar crédito.')
+            }
+        }
+
         if (viewingClient) {
             return (
                 <div className="min-h-screen bg-[#0F172A] flex flex-col">
@@ -295,7 +313,7 @@ export default function POSPage() {
                                     <div key={o.id} className="bg-[#1E293B] rounded-2xl px-4 py-3 flex justify-between items-center border border-white/5">
                                         <div>
                                             <p className="text-white text-xs font-semibold">
-                                                {o.createdAt?.seconds ? new Date(o.createdAt.seconds * 1000).toLocaleDateString('es-VE', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                                                {o.createdAt?.seconds ? new Date(o.createdAt.seconds * 1000).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date(o.createdAt.seconds * 1000).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' }) : '—'}
                                             </p>
                                             <p className="text-slate-500 text-[10px]">
                                                 {o.invoiceNumber ? `#${String(o.invoiceNumber).padStart(4, '0')}` : ''} · {o.paymentMethod}
@@ -372,7 +390,12 @@ export default function POSPage() {
                                 {filteredNonOpen.map(c => (
                                     <div key={c.id} className="bg-[#1E293B] rounded-2xl px-4 py-3 flex items-center justify-between border border-white/5">
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-white font-semibold text-sm truncate">{c.name}</p>
+                                            <div className="flex items-center gap-1.5">
+                                                <p className="text-white font-semibold text-sm truncate">{c.name}</p>
+                                                {(c.creditBalance || 0) > 0 && (
+                                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400 border border-green-500/20">💰 {formatUSD(c.creditBalance)}</span>
+                                                )}
+                                            </div>
                                             <p className="text-slate-400 text-xs">📱 {c.phone}</p>
                                             {c.notes && <p className="text-slate-500 text-[10px]">📝 {c.notes}</p>}
                                             <p className="text-slate-600 text-[10px]">{c.totalOrders || 0} visitas · {formatUSD(c.totalSpent || 0)}</p>
@@ -380,6 +403,7 @@ export default function POSPage() {
                                         <div className="flex gap-1 shrink-0 ml-2">
                                              <button onClick={() => handleViewHistory(c)} className="text-base font-bold w-10 h-10 rounded-lg bg-slate-600/20 text-slate-400 hover:bg-slate-600/30 transition-colors flex items-center justify-center">📋</button>
                                              <button onClick={() => handleEditClient(c)} className="text-base font-bold w-10 h-10 rounded-lg bg-slate-600/20 text-slate-400 hover:bg-slate-600/30 transition-colors flex items-center justify-center">✏️</button>
+                                             <button onClick={() => { setCreditClientData(c); setCreditAmount(''); setCreditModalOpen(true) }} className="text-base font-bold w-10 h-10 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors flex items-center justify-center">💰</button>
                                              <button onClick={() => handleSelectClient(c)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition-colors">Seleccionar</button>
                                         </div>
                                     </div>
@@ -440,6 +464,45 @@ export default function POSPage() {
                                     <button onClick={() => { setEditClientOpen(false); setEditClientData(null) }} className="btn-secondary flex-1">Cancelar</button>
                                     <button onClick={handleSaveEditClient} disabled={!editName.trim() || !editPhone.trim()} className="btn-primary flex-1">
                                         Guardar Cambios
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Modal abonar crédito */}
+                {creditModalOpen && creditClientData && (
+                    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/70 p-4 pt-8 sm:pt-4" onClick={() => { setCreditModalOpen(false); setCreditClientData(null); setCreditAmount('') }}>
+                        <div className="bg-[#1E293B] rounded-[24px] w-full max-w-md p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+                            <h2 className="text-lg font-bold text-white mb-2">💰 Abonar Crédito</h2>
+                            <p className="text-slate-400 text-xs mb-5">Cliente: <span className="text-white font-semibold">{creditClientData.name}</span></p>
+                            {(creditClientData.creditBalance || 0) > 0 && (
+                                <div className="bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-2 mb-4">
+                                    <p className="text-green-400 text-xs font-bold">Saldo actual: {formatUSD(creditClientData.creditBalance)}</p>
+                                </div>
+                            )}
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="label-xs">Monto a abonar (USD)</label>
+                                    <div className="relative mt-1">
+                                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">$</span>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0.01"
+                                            value={creditAmount}
+                                            onChange={e => setCreditAmount(e.target.value)}
+                                            className="input-field pl-10"
+                                            placeholder="0.00"
+                                            autoFocus
+                                        />
+                                    </div>
+                                </div>
+                                <div className="flex gap-3 pt-2">
+                                    <button onClick={() => { setCreditModalOpen(false); setCreditClientData(null); setCreditAmount('') }} className="btn-secondary flex-1">Cancelar</button>
+                                    <button onClick={handleAddCredit} disabled={!creditAmount || parseFloat(creditAmount) <= 0} className="bg-green-600 hover:bg-green-500 active:scale-[0.98] text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg shadow-green-600/30 flex-1 disabled:opacity-40 disabled:pointer-events-none">
+                                        Abonar {creditAmount ? formatUSD(parseFloat(creditAmount)) : ''}
                                     </button>
                                 </div>
                             </div>
@@ -582,7 +645,7 @@ export default function POSPage() {
                                             <div className="mt-1.5 space-y-0.5 pl-1">
                                                 {[...item.log].reverse().slice(0, 15).map((entry, idx) => (
                                                     <p key={idx} className={`text-[10px] ${entry.qty > 0 ? 'text-slate-600' : 'text-red-400'}`}>
-                                                        {(entry.qty > 0 ? '+' : '') + entry.qty} · {new Date(entry.addedAt).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}
+                                                        {(entry.qty > 0 ? '+' : '') + entry.qty} · {new Date(entry.addedAt).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })} {new Date(entry.addedAt).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' })}
                                                     </p>
                                                 ))}
                                                 {item.log.length > 15 && (

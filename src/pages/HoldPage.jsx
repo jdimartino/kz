@@ -171,7 +171,7 @@ export default function HoldPage() {
     const formatTime = (ts) => {
         if (!ts?.seconds) return ''
         const d = new Date(ts.seconds * 1000)
-        return d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })
+        return d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }) + ' ' + d.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' })
     }
 
     return (

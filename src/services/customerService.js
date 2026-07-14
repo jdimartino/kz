@@ -1,5 +1,5 @@
 // src/services/customerService.js
-import { collection, addDoc, updateDoc, doc, getDocs, query, where, orderBy, limit, serverTimestamp, increment } from 'firebase/firestore'
+import { collection, addDoc, updateDoc, doc, getDocs, query, where, orderBy, limit, serverTimestamp, increment, runTransaction } from 'firebase/firestore'
 import { db } from '../firebase'
 
 export async function createCustomer({ name, phone, notes }) {
@@ -67,4 +67,43 @@ export async function updateCustomer(customerId, { name, phone, notes }) {
         phone: phone.trim(),
         notes: notes?.trim() || '',
     })
+}
+
+export async function addCredit(customerId, amount, description = 'Abono') {
+    const customerRef = doc(db, 'customers', customerId)
+    return runTransaction(db, async (tx) => {
+        const snap = await tx.get(customerRef)
+        if (!snap.exists()) throw new Error('Cliente no encontrado')
+        const current = snap.data().creditBalance || 0
+        const history = snap.data().creditHistory || []
+        tx.update(customerRef, {
+            creditBalance: current + amount,
+            creditHistory: [...history, { amount, date: Date.now(), type: 'prepayment', description }],
+        })
+        return current + amount
+    })
+}
+
+export async function deductCredit(customerId, amount, orderId) {
+    const customerRef = doc(db, 'customers', customerId)
+    return runTransaction(db, async (tx) => {
+        const snap = await tx.get(customerRef)
+        if (!snap.exists()) throw new Error('Cliente no encontrado')
+        const current = snap.data().creditBalance || 0
+        if (current < amount) throw new Error('Saldo insuficiente')
+        const history = snap.data().creditHistory || []
+        tx.update(customerRef, {
+            creditBalance: current - amount,
+            creditHistory: [...history, { amount: -amount, date: Date.now(), type: 'deduction', description: `Débito factura #${orderId || 'N/A'}`, orderId }],
+        })
+        return current - amount
+    })
+}
+
+export async function getCreditHistory(customerId) {
+    const customerRef = doc(db, 'customers', customerId)
+    const snap = await getDocs(query(collection(db, 'customers'), where('__name__', '==', customerId)))
+    if (snap.empty) return []
+    const data = snap.docs[0].data()
+    return (data.creditHistory || []).sort((a, b) => b.date - a.date)
 }

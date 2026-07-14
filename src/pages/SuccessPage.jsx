@@ -44,6 +44,12 @@ export default function SuccessPage() {
                                 )}
                             </div>
                         </div>
+                        {(lastOrderData.creditApplied || 0) > 0 && (
+                            <div className="flex justify-between">
+                                <p className="text-green-400 font-semibold">💰 Crédito aplicado</p>
+                                <p className="text-green-400 font-bold">-{formatUSD(lastOrderData.creditApplied)}</p>
+                            </div>
+                        )}
                         {pay && (
                             <>
                                 {pay.paidBS > 0 && pay.method !== 'usd_cash' && (
