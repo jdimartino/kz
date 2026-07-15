@@ -39,6 +39,25 @@ export default function POSPage() {
     const toast = useToast()
 
     const [posMode, setPosMode] = useState('select')
+    const [unlinkedOrders, setUnlinkedOrders] = useState([])
+    const [showUnlinkedOrders, setShowUnlinkedOrders] = useState(false) // Toggle para mostrar listado
+
+    // Función para cargar órdenes sin customerId
+    const loadUnlinkedOrders = async () => {
+        try {
+            const q = query(collection(db, 'orders'), where('status', '==', 'open'))
+            const snap = await getDocs(q)
+            const unlinked = snap.docs
+                .map(doc => ({ id: doc.id, ...doc.data() }))
+                .filter(order => !order.customerId)
+            setUnlinkedOrders(unlinked)
+            setShowUnlinkedOrders(true)
+        } catch (err) {
+            console.error('Error cargando órdenes sin customerId:', err)
+            setUnlinkedOrders([])
+            setShowUnlinkedOrders(false)
+        }
+    }
     const [search, setSearch] = useState('')
     const [newClientOpen, setNewClientOpen] = useState(false)
     const [newName, setNewName] = useState('')
@@ -48,6 +67,80 @@ export default function POSPage() {
     const [viewingClient, setViewingClient] = useState(null)
     const [clientOrders, setClientOrders] = useState([])
     const [ordersLoading, setOrdersLoading] = useState(false)
+
+    // Sección para mostrar órdenes sin customerId
+    const UnlinkedOrdersView = () => {
+        if (!showUnlinkedOrders) return null
+        return (
+            <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex flex-col p-4 overflow-auto">
+                <div className="bg-[#1E293B] rounded-xl p-4 max-w-3xl mx-auto">
+                    <h2 className="text-white font-bold mb-4">Órdenes Abiertas sin customerId: {unlinkedOrders.length}</h2>
+                    <button onClick={() => setShowUnlinkedOrders(false)} className="mb-4 px-4 py-2 bg-red-600 rounded text-white font-bold">Cerrar</button>
+                    <div className="max-h-[60vh] overflow-auto">
+                        {unlinkedOrders.length === 0 && <p className="text-white">No hay órdenes sin customerId.</p>}
+                        <table className="min-w-full text-xs text-white">
+                            <thead>
+                                <tr>
+                                    <th className="border px-2 py-1">ID Orden</th>
+                                    <th className="border px-2 py-1">Teléfono Cliente</th>
+                                    <th className="border px-2 py-1">Nombre Cliente</th>
+                                    <th className="border px-2 py-1">Deuda USD</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {unlinkedOrders.map(order => (
+                                    <tr key={order.id}>
+                                        <td className="border px-2 py-1 font-mono">{order.id}</td>
+                                        <td className="border px-2 py-1">{order.client?.phone || '—'}</td>
+                                        <td className="border px-2 py-1">{order.client?.name || '—'}</td>
+                                        <td className="border px-2 py-1">{order.totalUSD?.toFixed(2) || '0.00'}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+    // Botón y efecto para cargar y mostrar órdenes sin customerId
+    const handleShowUnlinkedOrders = () => {
+        loadUnlinkedOrders()
+    }
+
+    // Función para ejecutar fixOpenOrdersCustomerIds y mostrar resultado
+    const [migrationResult, setMigrationResult] = useState(null)
+    const [migrationLoading, setMigrationLoading] = useState(false)
+
+    const handleRunMigration = async () => {
+        setMigrationLoading(true)
+        setMigrationResult(null)
+        try {
+            const fixedCount = await fixOpenOrdersCustomerIds()
+            setMigrationResult(fixedCount)
+            loadUnlinkedOrders() // Refrescar lista luego de migrar
+        } catch (err) {
+            console.error('Error al ejecutar migración:', err)
+            setMigrationResult('Error: ' + (err.message || err.toString()))
+        } finally {
+            setMigrationLoading(false)
+        }
+    }    
+
+    // Componente temporal para mostrar resultado de migración
+    const MigrationResultView = () => {
+        if (migrationResult === null) return null
+        return (
+            <div className="fixed bottom-16 right-4 z-40 bg-green-600 text-white px-4 py-2 rounded shadow-lg">
+                {typeof migrationResult === 'number'
+                    ? `Migración completada. Órdenes corregidas: ${migrationResult}`
+                    : migrationResult}
+            </div>
+        )
+    }
+
+    
     const [pendingClientCreation, setPendingClientCreation] = useState(null)
     const [expandedLogs, setExpandedLogs] = useState({})
     const [editClientOpen, setEditClientOpen] = useState(false)
@@ -432,8 +525,19 @@ export default function POSPage() {
                                 ))}
                             </div>
                         )}
-                    </main>
-                </div>
+        </main>
+        {/* Botón para mostrar órdenes sin customerId */}
+        <footer className="fixed bottom-4 left-4 z-50 flex flex-col gap-3 bg-[#1E293B] border border-white/10 rounded-xl p-3 shadow-lg">
+            <button onClick={handleShowUnlinkedOrders} className="bg-red-600 hover:bg-red-700 text-white px-5 py-3 rounded-xl font-semibold shadow-lg">Mostrar órdenes sin customerId</button>
+            <button disabled={migrationLoading} onClick={handleRunMigration} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-3 rounded-xl font-semibold shadow-lg">
+                {migrationLoading ? 'Migrando...' : 'Corregir órdenes sin customerId'}
+            </button>
+        </footer>  
+        
+        {/* Componente Modal para mostrar órdenes sin customerId */}
+        <UnlinkedOrdersView />
+        <MigrationResultView />
+    </div>
             )
         }
 
