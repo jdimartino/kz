@@ -170,15 +170,28 @@ export async function voidOrder(orderId) {
  * Reemplaza todos los ítems de una cuenta en espera (actualización completa).
  */
 export async function updateHoldOrder(orderId, items) {
+    // Normalizar: fusionar items duplicados por productId como red de seguridad
+    const merged = items.reduce((acc, item) => {
+        const existing = acc.find(i => i.productId === item.productId)
+        if (existing) {
+            existing.qty += item.qty
+            existing.subtotalUSD = existing.qty * existing.unitPriceUSD
+            existing.log = [...(existing.log || []), ...(item.log || [])]
+        } else {
+            acc.push({ ...item })
+        }
+        return acc
+    }, [])
+
     const batch = writeBatch(db)
     const orderRef = doc(db, 'orders', orderId)
-    const totalUSD = items.reduce((s, i) => s + Number(i.subtotalUSD), 0)
+    const totalUSD = merged.reduce((s, i) => s + Number(i.subtotalUSD), 0)
 
-    batch.update(orderRef, { totalUSD, itemCount: items.length, updatedAt: serverTimestamp() })
+    batch.update(orderRef, { totalUSD, itemCount: merged.length, updatedAt: serverTimestamp() })
 
     const existingSnap = await getDocs(collection(db, 'orders', orderId, 'items'))
     const existingIds = new Set(existingSnap.docs.map(d => d.id))
-    const newIds = new Set(items.map(i => i.productId))
+    const newIds = new Set(merged.map(i => i.productId))
 
     for (const id of existingIds) {
         if (!newIds.has(id)) {
@@ -186,7 +199,7 @@ export async function updateHoldOrder(orderId, items) {
         }
     }
 
-    for (const item of items) {
+    for (const item of merged) {
         const itemRef = doc(db, 'orders', orderId, 'items', item.productId)
         batch.set(itemRef, {
             name: item.name,

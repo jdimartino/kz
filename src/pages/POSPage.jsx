@@ -1021,7 +1021,7 @@ export default function POSPage() {
         if (!session?.id || items.length === 0) return
         try {
             if (client?.orderId) {
-                await appendHoldOrder(client.orderId, items)
+                await updateHoldOrder(client.orderId, items)
                 if (client?.phone) {
                     ensureCustomerByPhone({ name: client.name, phone: client.phone, notes: client.notes }).catch(() => {})
                 }
