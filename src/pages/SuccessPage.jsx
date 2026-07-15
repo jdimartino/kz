@@ -50,6 +50,12 @@ export default function SuccessPage() {
                                 <p className="text-green-400 font-bold">-{formatUSD(lastOrderData.creditApplied)}</p>
                             </div>
                         )}
+                        {(lastOrderData.abonosApplied || 0) > 0 && (
+                            <div className="flex justify-between">
+                                <p className="text-green-400 font-semibold">💰 Abonos previos</p>
+                                <p className="text-green-400 font-bold">-{formatUSD(lastOrderData.abonosApplied)}</p>
+                            </div>
+                        )}
                         {pay && (
                             <>
                                 {pay.paidBS > 0 && pay.method !== 'usd_cash' && (

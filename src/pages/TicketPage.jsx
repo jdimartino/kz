@@ -7,6 +7,7 @@ import { useNav } from '../context/NavigationContext'
 import { saveOrder, nextInvoiceNumber, completeHoldOrder } from '../services/orderService'
 import { formatUSD, formatBs, usdToBs, bsToUsd, calcChange } from '../utils/money'
 import { updateCustomerStats, deductCredit, findCustomerByPhone } from '../services/customerService'
+import { getAbonosByCustomer } from '../services/abonoService'
 import { useToast } from '../components/Toast'
 
 const METHODS = [
@@ -40,21 +41,29 @@ export default function TicketPage() {
     const [useCredit, setUseCredit] = useState(false)
     const [creditBalance, setCreditBalance] = useState(0)
     const [creditApplied, setCreditApplied] = useState(0)
+    const [abonosApplied, setAbonosApplied] = useState(0)
 
     useEffect(() => {
         nextInvoiceNumber().then(setInvoiceNum).catch(() => {})
     }, [])
 
     useEffect(() => {
-        const loadCredit = async () => {
+        const loadCustomerData = async () => {
             if (selectedClient?.id && selectedClient.id.length >= 20) {
                 try {
                     const customer = await findCustomerByPhone(selectedClient.phone)
                     if (customer) setCreditBalance(customer.creditBalance || 0)
                 } catch {}
             }
+            if (selectedClient?.phone) {
+                try {
+                    const abonos = await getAbonosByCustomer(selectedClient.id || '')
+                    const totalAbonos = abonos.reduce((sum, a) => sum + (a.amount || 0), 0)
+                    setAbonosApplied(totalAbonos)
+                } catch { setAbonosApplied(0) }
+            }
         }
-        loadCredit()
+        loadCustomerData()
     }, [selectedClient])
 
     useEffect(() => {
@@ -72,7 +81,7 @@ export default function TicketPage() {
     }, [method])
 
     const totalBs = rate ? usdToBs(totalUSD, rate) : 0
-    const netTotal = Math.max(0, totalUSD - creditApplied)
+    const netTotal = Math.max(0, totalUSD - creditApplied - abonosApplied)
     const netTotalBs = rate ? usdToBs(netTotal, rate) : 0
 
     const mixedRemaining = useMemo(() => {
@@ -139,6 +148,7 @@ export default function TicketPage() {
                 totalUSD,
                 netTotal,
                 creditApplied,
+                abonosApplied,
                 totalBsAtPayment: netTotalBs,
                 paymentRate: rate,
                 ...(method === 'bs_cash' && {
@@ -175,6 +185,7 @@ export default function TicketPage() {
                 items: [...items],
                 totalUSD,
                 creditApplied,
+                abonosApplied,
                 payment: { ...payment },
                 invoiceNumber: invoiceNum,
             })
@@ -225,7 +236,7 @@ export default function TicketPage() {
                     </p>
                 </div>
                 <div className="ml-auto text-right">
-                    {creditApplied > 0 ? (
+                    {(creditApplied > 0 || abonosApplied > 0) ? (
                         <>
                             <p className="text-green-400 font-extrabold text-lg leading-none">{formatUSD(netTotal)}</p>
                             <p className="text-slate-500 text-[10px] line-through">{formatUSD(totalUSD)}</p>
@@ -320,6 +331,17 @@ export default function TicketPage() {
                                 </div>
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* Abonos previos */}
+                {abonosApplied > 0 && (
+                    <div className="bg-green-500/10 border border-green-500/20 rounded-2xl px-4 py-3 flex justify-between items-center">
+                        <div>
+                            <p className="text-green-400 font-bold text-sm">💰 Abonos previos</p>
+                            <p className="text-green-300 text-xs">{formatUSD(abonosApplied)} aplicados</p>
+                        </div>
+                        <p className="text-green-400 font-extrabold text-sm">-{formatUSD(abonosApplied)}</p>
                     </div>
                 )}
 
@@ -532,8 +554,8 @@ export default function TicketPage() {
                     disabled={!canPay() || saving}
                     className="w-full bg-green-600 hover:bg-green-500 active:scale-[0.98] text-white font-extrabold py-4 px-6 rounded-2xl transition-all shadow-2xl shadow-green-600/30 disabled:opacity-40 disabled:pointer-events-none text-lg"
                 >
-                    {saving ? 'Procesando...' : creditApplied > 0
-                        ? <><span>✅ Cobrar {formatUSD(netTotal)}</span><br /><span className="text-lg opacity-80">💰 Crédito: -{formatUSD(creditApplied)}</span></>
+                    {saving ? 'Procesando...' : (creditApplied > 0 || abonosApplied > 0)
+                        ? <><span>✅ Cobrar {formatUSD(netTotal)}</span><br /><span className="text-lg opacity-80">{creditApplied > 0 && `💰 Crédito: -${formatUSD(creditApplied)}`}{creditApplied > 0 && abonosApplied > 0 && ' · '}{abonosApplied > 0 && `💰 Abonos: -${formatUSD(abonosApplied)}`}</span></>
                         : <><span>✅ Cobrar {formatUSD(totalUSD)}</span><br /><span className="text-lg opacity-80">{formatBs(totalBs)}</span></>
                     }
                 </button>

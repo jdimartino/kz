@@ -5,6 +5,7 @@ import {
     writeBatch, runTransaction,
 } from 'firebase/firestore'
 import { db } from '../firebase'
+import { findCustomerByPhone } from './customerService'
 
 /**
  * Reserva el siguiente número de factura usando un contador atómico.
@@ -72,7 +73,7 @@ export async function saveOrder({ cashierId, sessionId, items, payment, invoiceN
  * Guarda una Factura en Espera (cuenta abierta) en Firestore usando writeBatch.
  * mode: 'tab' / status: 'open'
  */
-export async function saveHoldOrder({ cashierId, sessionId, items, client, notes }) {
+export async function saveHoldOrder({ cashierId, sessionId, items, client, notes, customerId }) {
     const orderRef = doc(collection(db, 'orders'))
     const batch = writeBatch(db)
 
@@ -82,6 +83,7 @@ export async function saveHoldOrder({ cashierId, sessionId, items, client, notes
         status: 'open',
         mode: 'tab',
         client: { name: client.name.trim(), phone: client.phone.trim() },
+        customerId: customerId || null,
         notes: notes?.trim() || '',
         totalUSD: items.reduce((s, i) => s + Number(i.subtotalUSD), 0),
         itemCount: items.length,
@@ -253,4 +255,33 @@ export async function appendHoldOrder(orderId, items) {
             }
         }
     })
+}
+
+/**
+ * Asigna customerId a órdenes abiertas que no lo tengan,
+ * buscando el cliente por teléfono en la colección customers.
+ */
+export async function fixOpenOrdersCustomerIds() {
+    const openQuery = query(collection(db, 'orders'), where('status', '==', 'open'))
+    const snap = await getDocs(openQuery)
+    const batch = writeBatch(db)
+    let fixed = 0
+
+    for (const orderDoc of snap.docs) {
+        const data = orderDoc.data()
+        if (data.customerId) continue
+        const phone = data.client?.phone?.trim()
+        if (!phone) continue
+
+        try {
+            const customer = await findCustomerByPhone(phone)
+            if (customer) {
+                batch.update(doc(db, 'orders', orderDoc.id), { customerId: customer.id })
+                fixed++
+            }
+        } catch {}
+    }
+
+    if (fixed > 0) await batch.commit()
+    return fixed
 }

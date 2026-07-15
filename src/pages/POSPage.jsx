@@ -10,8 +10,9 @@ import { useCustomers } from '../hooks/useCustomers'
 import { useOpenOrders } from '../hooks/useOpenOrders'
 import { useMultipleOpenOrderItems } from '../hooks/useOpenOrderItems'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
-import { saveHoldOrder, appendHoldOrder, updateHoldOrder, getOrderItems } from '../services/orderService'
-import { createCustomer, ensureCustomerByPhone, getCustomerHistory, updateCustomer, addCredit } from '../services/customerService'
+import { saveHoldOrder, appendHoldOrder, updateHoldOrder, getOrderItems, fixOpenOrdersCustomerIds } from '../services/orderService'
+import { createCustomer, ensureCustomerByPhone, getCustomerHistory, updateCustomer, addCredit, findCustomerByPhone } from '../services/customerService'
+import { addAbono, getAbonosByCustomer, getTotalAbonosByCustomer } from '../services/abonoService'
 import { DEFAULT_USER } from '../context/AuthContext'
 import LogoIcon from '../components/LogoIcon'
 import { formatUSD } from '../utils/money'
@@ -57,6 +58,38 @@ export default function POSPage() {
     const [creditModalOpen, setCreditModalOpen] = useState(false)
     const [creditClientData, setCreditClientData] = useState(null)
     const [creditAmount, setCreditAmount] = useState('')
+    const [abonoModalOpen, setAbonoModalOpen] = useState(false)
+    const [abonoClientData, setAbonoClientData] = useState(null)
+    const [abonoAmount, setAbonoAmount] = useState('')
+    const [abonoCurrency, setAbonoCurrency] = useState('USD')
+    const [abonoHistory, setAbonoHistory] = useState([])
+    const [clientAbonosUSD, setClientAbonosUSD] = useState(0)
+    const [openAbonosMap, setOpenAbonosMap] = useState({})
+    const [abonoLoading, setAbonoLoading] = useState(false)
+
+    // Refrescar datos de abonos para un cliente y todas las cuentas abiertas
+    const refreshAbonos = async (forCustomerId) => {
+        if (forCustomerId) {
+            try {
+                const total = await getTotalAbonosByCustomer(forCustomerId)
+                setClientAbonosUSD(total)
+            } catch { setClientAbonosUSD(0) }
+        }
+        try {
+            const openOrders = holdOrders.filter(o => o.status === 'open')
+            const ids = [...new Set(openOrders.map(o => o.customerId).filter(Boolean))]
+            const map = {}
+            await Promise.all(ids.map(async (id) => {
+                try { map[id] = await getTotalAbonosByCustomer(id) } catch { map[id] = 0 }
+            }))
+            setOpenAbonosMap(map)
+        } catch {}
+    }
+
+    // Cargar abonos de clientes con cuentas abiertas
+    useEffect(() => {
+        refreshAbonos(null)
+    }, [holdOrders])
 
     const activeProducts = products.filter(p => p.active)
 
@@ -84,6 +117,23 @@ export default function POSPage() {
             createClientInBackground(pendingClientCreation)
         }
     }, [isOnline, pendingClientCreation])
+
+    // Auto-asignar customerId a órdenes abiertas que no lo tengan
+    useEffect(() => {
+        if (isOnline) {
+            fixOpenOrdersCustomerIds().catch(() => {})
+        }
+    }, [isOnline])
+
+    // Cargar total de abonos USD del cliente seleccionado
+    useEffect(() => {
+        const customerId = selectedClient?.id
+        if (customerId && customerId.length >= 20) {
+            getTotalAbonosByCustomer(customerId).then(setClientAbonosUSD).catch(() => setClientAbonosUSD(0))
+        } else {
+            setClientAbonosUSD(0)
+        }
+    }, [selectedClient])
 
     // Guardia: si no hay sesión activa
     if (session?.status !== 'open' && !loading) {
@@ -153,7 +203,7 @@ export default function POSPage() {
         })
         const openOrders = holdOrders.filter(o => o.status === 'open')
         const openClients = openOrders.map(o => ({
-            id: null,
+            id: o.customerId || null,
             name: o.client?.name || '—',
             phone: o.client?.phone || '',
             totalUSD: o.totalUSD || 0,
@@ -285,6 +335,64 @@ export default function POSPage() {
             }
         }
 
+        const handleAddAbono = async () => {
+            if (abonoLoading) return
+            setAbonoLoading(true)
+            let clientId = abonoClientData?.id
+            if (!clientId && abonoClientData?.phone) {
+                try {
+                    const found = await findCustomerByPhone(abonoClientData.phone)
+                    if (found) clientId = found.id
+                } catch {}
+            }
+            if (!clientId || !abonoAmount || parseFloat(abonoAmount) <= 0) {
+                setAbonoLoading(false)
+                return
+            }
+            try {
+                const amount = parseFloat(abonoAmount)
+                const rate = session?.exchangeRate || null
+                await addAbono({
+                    customerId: clientId,
+                    customerName: abonoClientData.name,
+                    amountEntered: amount,
+                    currency: abonoCurrency,
+                    exchangeRateUsed: abonoCurrency === 'BS' ? rate : null,
+                })
+                toast.success(`${abonoCurrency === 'USD' ? '$' : 'Bs'}${amount.toFixed(2)} abonados a la cuenta de ${abonoClientData.name}`)
+                setAbonoModalOpen(false)
+                setAbonoClientData(null)
+                setAbonoAmount('')
+                setAbonoCurrency('USD')
+                setAbonoHistory([])
+                await refreshAbonos(clientId)
+            } catch (err) {
+                console.error(err)
+                toast.error('Error al registrar abono.')
+            } finally {
+                setAbonoLoading(false)
+            }
+        }
+
+        const handleOpenAbono = async (client) => {
+            let clientId = client.id
+            if (!clientId && client.phone) {
+                try {
+                    const found = await findCustomerByPhone(client.phone)
+                    if (found) clientId = found.id
+                } catch {}
+            }
+            const clientWithId = { ...client, id: clientId || null }
+            setAbonoClientData(clientWithId)
+            setAbonoAmount('')
+            setAbonoCurrency('USD')
+            setAbonoModalOpen(true)
+            try {
+                const history = clientId ? await getAbonosByCustomer(clientId) : []
+                setAbonoHistory(history.slice(0, 10))
+            } catch { setAbonoHistory([]) }
+        }
+
         if (viewingClient) {
             return (
                 <div className="min-h-screen bg-[#0F172A] flex flex-col">
@@ -360,20 +468,25 @@ export default function POSPage() {
                         <div>
                             <p className="text-green-400 text-xs font-bold uppercase tracking-wider mb-2">🟢 Cuentas Abiertas</p>
                             <div className="space-y-2">
-                                {filteredOpens.map(o => (
-                                    <button key={o.orderId} onClick={() => handleSelectClient({ id: o.id, name: o.name, phone: o.phone, orderId: o.orderId })}
-                                        className="w-full bg-green-500/5 border border-green-500/10 rounded-2xl px-4 py-3 flex items-center justify-between text-left active:scale-[0.99] transition-all"
-                                    >
-                                        <div>
+                                {filteredOpens.map(o => {
+                                    const restante = Math.max(0, o.totalUSD - (o.customerId ? (openAbonosMap[o.customerId] || 0) : 0))
+                                    if (restante <= 0) return null
+                                    return (
+                                    <div key={o.orderId} className="bg-green-500/5 border border-green-500/10 rounded-2xl px-4 py-3 flex items-center justify-between">
+                                        <button onClick={() => handleSelectClient({ id: o.id, name: o.name, phone: o.phone, orderId: o.orderId })} className="flex-1 text-left">
                                             <p className="text-white font-semibold text-sm">{o.name}</p>
                                             <p className="text-slate-400 text-xs">{o.phone}</p>
+                                        </button>
+                                        <div className="flex items-center gap-2 shrink-0 ml-2">
+                                            <button onClick={(e) => { e.stopPropagation(); handleOpenAbono({ id: o.customerId || null, name: o.name, phone: o.phone, totalUSD: o.totalUSD }) }} className="text-[10px] font-bold px-2 py-1.5 rounded-lg bg-green-500/15 text-green-400 hover:bg-green-500/25 transition-colors">💰 Abonar</button>
+                                            <div className="text-right">
+                                                <p className="text-blue-400 font-extrabold">{formatUSD(restante)}</p>
+                                                <p className="text-slate-500 text-[10px]">{o.itemCount} ítems</p>
+                                            </div>
                                         </div>
-                                        <div className="text-right">
-                                            <p className="text-blue-400 font-extrabold">{formatUSD(o.totalUSD)}</p>
-                                            <p className="text-slate-500 text-[10px]">{o.itemCount} ítems</p>
-                                        </div>
-                                    </button>
-                                ))}
+                                    </div>
+                                    )
+                                })}
                             </div>
                         </div>
                     )}
@@ -509,6 +622,106 @@ export default function POSPage() {
                         </div>
                     </div>
                 )}
+
+                {/* Modal abonar a cuenta */}
+                {abonoModalOpen && abonoClientData && (
+                    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/70 p-4 pt-8 sm:pt-4" onClick={() => { setAbonoModalOpen(false); setAbonoClientData(null); setAbonoAmount(''); setAbonoCurrency('USD'); setAbonoHistory([]) }}>
+                        <div className="bg-[#1E293B] rounded-[24px] w-full max-w-md p-6 shadow-2xl max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                            <h2 className="text-lg font-bold text-white mb-2">💰 Abonar a Cuenta</h2>
+                            <p className="text-slate-400 text-xs mb-4">Cliente: <span className="text-white font-semibold">{abonoClientData.name}</span></p>
+                            <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-2 mb-4">
+                                <p className="text-red-400 text-xs font-bold">Deuda actual: {formatUSD(abonoClientData.totalUSD || 0)}</p>
+                            </div>
+                            <div className="space-y-4">
+                                {/* Selector de moneda */}
+                                <div>
+                                    <label className="label-xs">Abonar en</label>
+                                    <div className="flex gap-2 mt-1">
+                                        <button
+                                            onClick={() => setAbonoCurrency('USD')}
+                                            className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition-all ${abonoCurrency === 'USD' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+                                        >
+                                            💵 USD
+                                        </button>
+                                        <button
+                                            onClick={() => setAbonoCurrency('BS')}
+                                            className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition-all ${abonoCurrency === 'BS' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+                                        >
+                                            💴 Bs
+                                        </button>
+                                    </div>
+                                    {abonoCurrency === 'BS' && session?.exchangeRate && (
+                                        <p className="text-slate-400 text-[10px] mt-1">Tasa fija (Bs por $): {session.exchangeRate.toFixed(2)}</p>
+                                    )}
+                                </div>
+                                <div>
+                                    <label className="label-xs">Monto del abono {abonoCurrency === 'USD' ? '(USD)' : '(Bs)'}</label>
+                                    <div className="relative mt-1">
+                                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">{abonoCurrency === 'USD' ? '$' : 'Bs'}</span>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0.01"
+                                            max={abonoCurrency === 'USD' ? (abonoClientData.totalUSD || 0) : ((abonoClientData.totalUSD || 0) * (session?.exchangeRate || 1))}
+                                            value={abonoAmount}
+                                            onChange={e => {
+                                                const max = abonoCurrency === 'USD'
+                                                    ? (abonoClientData.totalUSD || 0)
+                                                    : ((abonoClientData.totalUSD || 0) * (session?.exchangeRate || 1))
+                                                const val = Math.min(parseFloat(e.target.value) || 0, max)
+                                                setAbonoAmount(Math.max(0, val).toString())
+                                            }}
+                                            className="input-field pl-12"
+                                            placeholder="0.00"
+                                            autoFocus
+                                        />
+                                    </div>
+                                    {abonoCurrency === 'BS' && session?.exchangeRate && abonoAmount && (
+                                        <p className="text-slate-500 text-[10px] mt-1">≈ {formatUSD(parseFloat(abonoAmount || '0') / session.exchangeRate)}</p>
+                                    )}
+                                    <div className="flex justify-between mt-1">
+                                        <button onClick={() => {
+                                            const max = abonoCurrency === 'USD'
+                                                ? (abonoClientData.totalUSD || 0)
+                                                : ((abonoClientData.totalUSD || 0) * (session?.exchangeRate || 1))
+                                            setAbonoAmount(max.toString())
+                                        }} className="text-[10px] text-green-400 font-bold">Abonar todo</button>
+                                        <p className="text-slate-500 text-[10px]">
+                                            Restante: {formatUSD(Math.max(0, (abonoClientData.totalUSD || 0) - (abonoCurrency === 'USD'
+                                                ? (parseFloat(abonoAmount) || 0)
+                                                : ((parseFloat(abonoAmount) || 0) / (session?.exchangeRate || 1))
+                                            )))}
+                                        </p>
+                                    </div>
+                                </div>
+                                {abonoHistory.length > 0 && (
+                                    <div>
+                                        <p className="text-slate-400 text-xs font-bold mb-2">Abonos anteriores:</p>
+                                        <div className="space-y-1">
+                                            {abonoHistory.map(a => (
+                                                <div key={a.id} className="flex justify-between text-[11px]">
+                                                    <span className="text-slate-500">
+                                                        {a.createdAt?.seconds ? new Date(a.createdAt.seconds * 1000).toLocaleDateString('es-VE', { day: '2-digit', month: 'short' }) : '—'}
+                                                        <span className="text-slate-600 ml-1">{a.currency === 'BS' ? 'Bs' : '$'}</span>
+                                                    </span>
+                                                    <span className="text-green-400 font-bold">
+                                                        {a.currency === 'BS' ? `Bs${(a.amount || 0).toFixed(2)}` : formatUSD(a.amountUSD || a.amount || 0)}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="flex gap-3 pt-2">
+                                    <button onClick={() => { setAbonoModalOpen(false); setAbonoClientData(null); setAbonoAmount(''); setAbonoCurrency('USD'); setAbonoHistory([]) }} className="btn-secondary flex-1">Cancelar</button>
+                                    <button onClick={handleAddAbono} disabled={!abonoAmount || parseFloat(abonoAmount) <= 0 || abonoLoading} className="bg-green-600 hover:bg-green-500 active:scale-[0.98] text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg shadow-green-600/30 flex-1 disabled:opacity-40 disabled:pointer-events-none">
+                                        {abonoLoading ? 'Procesando...' : `Abonar ${abonoCurrency === 'USD' ? formatUSD(parseFloat(abonoAmount || '0')) : `Bs${(parseFloat(abonoAmount) || 0).toFixed(2)}`}`}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         )
     }
@@ -576,7 +789,9 @@ export default function POSPage() {
         const handleWhatsAppSummary = () => {
             if (!whatsappPhone) return
             const lines = displayItems.map(i => `${i.emoji} ${i.name} x${i.qty} — ${formatUSD(i.subtotalUSD)}`).join('\n')
-            const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${selectedClient?.name}*, aquí el resumen:\n\n${lines}\n\n💵 *Total: ${formatUSD(summaryTotal)}*\n\n*Datos del Pago Movil*\n👤 Rafael Garrido\n📱 04143047502\nV-13536210\n🏦 0102 (Banco de Venezuela)\n\n_La KZ POS by #JDMRules_`
+            const nuevoTotal = Math.max(0, summaryTotal - clientAbonosUSD)
+            const abonoLine = clientAbonosUSD > 0 ? `\n💰 *Abonos previos: -${formatUSD(clientAbonosUSD)}*\n` : ''
+            const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${selectedClient?.name}*, aquí el resumen:\n\n${lines}${abonoLine}\n💵 *Total a pagar: ${formatUSD(nuevoTotal)}*\n\n*Datos del Pago Movil*\n👤 Rafael Garrido\n📱 04143047502\nV-13536210\n🏦 0102 (Banco de Venezuela)\n\n_La KZ POS by #JDMRules_`
             window.open(`https://wa.me/${whatsappPhone}?text=${encodeURIComponent(msg)}`, '_blank')
         }
 
@@ -657,10 +872,13 @@ export default function POSPage() {
                                 ))}
                             </div>
                             <div className="flex items-center justify-between px-4 py-3 bg-white/5">
+                                {clientAbonosUSD > 0 && (
+                                    <p className="text-green-400 text-[10px] font-bold">💰 Abonos previos: -{formatUSD(clientAbonosUSD)}</p>
+                                )}
                                 <p className="text-white font-bold text-sm">Total</p>
                                 <div className="text-right">
-                                    <p className="text-blue-400 font-extrabold">{formatUSD(summaryTotal)}</p>
-                                    {rate && <p className="text-slate-500 text-[10px]">Bs {summaryTotalBs.toFixed(2)}</p>}
+                                    <p className="text-blue-400 font-extrabold">{formatUSD(Math.max(0, summaryTotal - clientAbonosUSD))}</p>
+                                    {rate && <p className="text-slate-500 text-[10px]">Bs {Math.max(0, summaryTotal - clientAbonosUSD) * rate} <span className={clientAbonosUSD > 0 ? 'line-through text-slate-600' : ''}>{clientAbonosUSD > 0 ? formatUSD(summaryTotal) : ''}</span></p>}
                                 </div>
                             </div>
                         </div>
@@ -704,12 +922,14 @@ export default function POSPage() {
                     ensureCustomerByPhone({ name: client.name, phone: client.phone, notes: client.notes }).catch(() => {})
                 }
             } else {
+                const customerId = client?.id?.length >= 20 ? client.id : null
                 const id = await saveHoldOrder({
                     cashierId: DEFAULT_USER.uid,
                     sessionId: session.id,
                     items,
                     client: { name: client?.name || '—', phone: client?.phone || '' },
                     notes: client?.notes || '',
+                    customerId,
                 })
                 setSelectedClient({ ...client, orderId: id })
                 if (client?.phone) {
