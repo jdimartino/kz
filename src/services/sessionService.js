@@ -23,3 +23,9 @@ export async function closeSession(sessionId, totals) {
         totalTx: totals.totalTx,
     })
 }
+
+export async function updateExchangeRate(sessionId, newRate) {
+    return updateDoc(doc(db, 'sessions', sessionId), {
+        exchangeRate: newRate,
+    })
+}

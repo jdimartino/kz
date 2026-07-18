@@ -5,7 +5,7 @@ import { db } from '../../firebase'
 import { DEFAULT_USER } from '../../context/AuthContext'
 import { useSession } from '../../context/SessionContext'
 import { useSalesReport } from '../../hooks/useSalesReport'
-import { closeSession } from '../../services/sessionService'
+import { closeSession, updateExchangeRate } from '../../services/sessionService'
 import { formatUSD } from '../../utils/money'
 import { useToast } from '../Toast'
 
@@ -25,6 +25,11 @@ export default function SessionPanel({ onSessionOpen }) {
     const [exchangeRate, setExchangeRate] = useState('')
     const [suggestedRate, setSuggestedRate] = useState(null)
     const [rateLoading, setRateLoading] = useState(false)
+    const [editingRate, setEditingRate] = useState(false)
+    const [editRateValue, setEditRateValue] = useState('')
+    const [editSuggestedRate, setEditSuggestedRate] = useState(null)
+    const [editRateLoading, setEditRateLoading] = useState(false)
+    const [savingRate, setSavingRate] = useState(false)
 
     // Sugerir tasa al abrir el panel de apertura
     useEffect(() => {
@@ -96,6 +101,45 @@ export default function SessionPanel({ onSessionOpen }) {
 
     const totalUSDSum = orders.reduce((s, o) => s + (o.totalUSD || 0), 0)
 
+    const handleFetchEditSuggestion = async () => {
+        setEditRateLoading(true)
+        for (const url of RATE_ENDPOINTS) {
+            try {
+                const res = await fetch(url, { cache: 'no-store' })
+                if (!res.ok) continue
+                const data = await res.json()
+                const value = data.promedio ?? data.rate
+                if (value) {
+                    setEditSuggestedRate(Number(value))
+                    setEditRateValue(String(Number(value).toFixed(2)))
+                    setEditRateLoading(false)
+                    return
+                }
+            } catch { /* try next */ }
+        }
+        setEditRateLoading(false)
+    }
+
+    const handleSaveRate = async () => {
+        const rate = parseFloat(editRateValue)
+        if (isNaN(rate) || rate <= 0) {
+            toast.error('Ingresa una tasa válida.')
+            return
+        }
+        setSavingRate(true)
+        try {
+            await updateExchangeRate(session.id, rate)
+            setEditingRate(false)
+            setEditSuggestedRate(null)
+            toast.success(`Tasa actualizada a Bs ${rate.toFixed(2)}`)
+        } catch (err) {
+            console.error(err)
+            toast.error('Error al actualizar la tasa.')
+        } finally {
+            setSavingRate(false)
+        }
+    }
+
     const byMethod = orders.reduce((acc, o) => {
         const m = o.paymentMethod || 'unknown'
         acc[m] = (acc[m] || 0) + (o.totalUSD || 0)
@@ -116,10 +160,55 @@ export default function SessionPanel({ onSessionOpen }) {
             <div className="space-y-4">
                 <div className="bg-green-500/10 border border-green-500/20 rounded-2xl p-5 flex items-center gap-4">
                     <div className="text-3xl">✅</div>
-                    <div>
+                    <div className="flex-1">
                         <p className="text-green-400 font-bold text-lg">Caja Abierta</p>
                         <p className="text-slate-300 text-sm">Sesión activa — ID: {session.id.slice(0, 8)}</p>
-                        <p className="text-blue-400 text-sm font-semibold mt-1">💰 Tasa: Bs {session.exchangeRate?.toFixed(2)}</p>
+                        {!editingRate ? (
+                            <p className="text-blue-400 text-sm font-semibold mt-1">
+                                💰 Tasa: Bs {session.exchangeRate?.toFixed(2)}
+                                <button
+                                    onClick={() => { setEditingRate(true); setEditRateValue(session.exchangeRate?.toFixed(2) || ''); setEditSuggestedRate(null); handleFetchEditSuggestion() }}
+                                    className="ml-2 text-[11px] font-bold bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 px-2 py-0.5 rounded-lg transition-colors"
+                                >
+                                    ✏️ Cambiar
+                                </button>
+                            </p>
+                        ) : (
+                            <div className="mt-2 space-y-2">
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">Bs</span>
+                                    <input
+                                        type="number" step="0.01" min="0.01"
+                                        value={editRateValue}
+                                        onChange={e => setEditRateValue(e.target.value)}
+                                        className="input-field pl-9 pr-12 py-2 text-sm"
+                                        placeholder={editRateLoading ? 'Consultando...' : '0.00'}
+                                        autoFocus
+                                    />
+                                    {editRateLoading && (
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                            <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                                        </div>
+                                    )}
+                                    {!editRateLoading && editSuggestedRate && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditRateValue(String(editSuggestedRate.toFixed(2)))}
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 px-1.5 py-0.5 rounded-lg transition-colors"
+                                            title="Usar tasa sugerida"
+                                        >
+                                            ⟳ {editSuggestedRate.toFixed(2)}
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="flex gap-2">
+                                    <button onClick={() => { setEditingRate(false); setEditSuggestedRate(null) }} className="btn-secondary flex-1 text-xs py-2">Cancelar</button>
+                                    <button onClick={handleSaveRate} disabled={savingRate || !editRateValue} className="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-xl transition-colors disabled:opacity-50 text-xs">
+                                        {savingRate ? 'Guardando...' : 'Guardar'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 

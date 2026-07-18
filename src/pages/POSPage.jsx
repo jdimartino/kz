@@ -10,7 +10,7 @@ import { useCustomers } from '../hooks/useCustomers'
 import { useOpenOrders } from '../hooks/useOpenOrders'
 import { useMultipleOpenOrderItems } from '../hooks/useOpenOrderItems'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
-import { saveHoldOrder, appendHoldOrder, updateHoldOrder, getOrderItems, fixOpenOrdersCustomerIds } from '../services/orderService'
+import { saveHoldOrder, appendHoldOrder, updateHoldOrder, cancelHoldOrder, getOrderItems, fixOpenOrdersCustomerIds } from '../services/orderService'
 import { createCustomer, ensureCustomerByPhone, getCustomerHistory, updateCustomer, addCredit, findCustomerByPhone } from '../services/customerService'
 import { addAbono, getAbonosByCustomer, getTotalAbonosByCustomer } from '../services/abonoService'
 import { DEFAULT_USER } from '../context/AuthContext'
@@ -568,9 +568,14 @@ export default function POSPage() {
 
                 <main className="flex-1 px-4 pt-3 space-y-4 overflow-auto pb-8">
                     {/* Pestañas abiertas (siempre visibles y filtrables) */}
-                    {filteredOpens.length > 0 && (
+                    {filteredOpens.length > 0 && (() => {
+                        const totalAbiertas = filteredOpens.reduce((s, o) => s + Math.max(0, o.totalUSD - (o.customerId ? (openAbonosMap[o.customerId] || 0) : 0)), 0)
+                        return (
                         <div>
-                            <p className="text-green-400 text-xs font-bold uppercase tracking-wider mb-2">🟢 Cuentas Abiertas</p>
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-green-400 text-xs font-bold uppercase tracking-wider">🟢 Cuentas Abiertas</p>
+                                <p className="text-green-400 text-sm font-extrabold">{formatUSD(totalAbiertas)}</p>
+                            </div>
                             <div className="space-y-2">
                                 {filteredOpens.map(o => {
                                     const restante = Math.max(0, o.totalUSD - (o.customerId ? (openAbonosMap[o.customerId] || 0) : 0))
@@ -593,7 +598,8 @@ export default function POSPage() {
                                 })}
                             </div>
                         </div>
-                    )}
+                        )
+                    })()}
 
                     {/* Últimos clientes (sin duplicar los que tienen pestaña abierta) */}
                     <div>
@@ -873,6 +879,12 @@ export default function POSPage() {
                 }
             }).filter(Boolean)
             try {
+                if (newItems.length === 0) {
+                    await cancelHoldOrder(selectedClient?.orderId)
+                    setSelectedClient(prev => ({ ...prev, orderId: null }))
+                    setPosMode('client')
+                    return
+                }
                 await updateHoldOrder(selectedClient?.orderId, newItems)
             } catch (err) {
                 console.error(err)
@@ -883,6 +895,12 @@ export default function POSPage() {
         const handleRemoveItem = async (productId) => {
             const newItems = displayItems.filter(item => item.productId !== productId)
             try {
+                if (newItems.length === 0) {
+                    await cancelHoldOrder(selectedClient?.orderId)
+                    setSelectedClient(prev => ({ ...prev, orderId: null }))
+                    setPosMode('client')
+                    return
+                }
                 await updateHoldOrder(selectedClient?.orderId, newItems)
             } catch (err) {
                 console.error(err)
@@ -895,7 +913,7 @@ export default function POSPage() {
             const lines = displayItems.map(i => `${i.emoji} ${i.name} x${i.qty} — ${formatUSD(i.subtotalUSD)}`).join('\n')
             const nuevoTotal = Math.max(0, summaryTotal - clientAbonosUSD)
             const abonoLine = clientAbonosUSD > 0 ? `\n💰 *Abonos previos: -${formatUSD(clientAbonosUSD)}*\n` : ''
-            const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${selectedClient?.name}*, aquí el resumen:\n\n${lines}${abonoLine}\n💵 *Total a pagar: ${formatUSD(nuevoTotal)}*\n\n*Datos del Pago Movil*\n👤 Rafael Garrido\n📱 04143047502\nV-13536210\n🏦 0102 (Banco de Venezuela)\n\n_La KZ POS by #JDMRules_`
+            const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${selectedClient?.name}*, aquí el resumen:\n\n${lines}${abonoLine}\n💵 *Total a pagar: ${formatUSD(nuevoTotal)}*\n\n*Datos del Pago Movil*\n👤 Rafael Garrido\n📱 04143047502\nV-13536210\n🏦 0102 (Banco de Venezuela)\n\n_La KZ POS by #JDMRules_\nSiguenos en @lakz_ct`
             window.open(`https://wa.me/${whatsappPhone}?text=${encodeURIComponent(msg)}`, '_blank')
         }
 
@@ -1018,7 +1036,20 @@ export default function POSPage() {
     const client = selectedClient
 
     const handleSaveTab = async () => {
-        if (!session?.id || items.length === 0) return
+        if (!session?.id) return
+        if (items.length === 0) {
+            if (client?.orderId) {
+                try {
+                    await cancelHoldOrder(client.orderId)
+                    setSelectedClient({ ...client, orderId: null })
+                } catch (err) {
+                    console.error(err)
+                    toast.error('Error al cancelar la cuenta.')
+                }
+            }
+            dispatch({ type: 'CLEAR_CART' })
+            return
+        }
         try {
             if (client?.orderId) {
                 await updateHoldOrder(client.orderId, items)
@@ -1056,7 +1087,7 @@ export default function POSPage() {
             const order = holdOrders.find(o => o.id === orderId)
             const phone = client?.phone?.replace(/^0/, '58')
             const lines = orderItems.map(i => `${i.emoji} ${i.name} x${i.qty} — ${formatUSD(i.subtotalUSD)}`).join('\n')
-            const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${client?.name}*, aquí el resumen:\n\n${lines}\n\n💵 *Total: ${formatUSD(order?.totalUSD || totalUSD)}*\n\n*Datos del Pago Movil*\n👤 Rafael Garrido\n📱 04143047502\nV-13536210\n🏦 0102 (Banco de Venezuela)\n\n_La KZ POS by #JDMRules_`
+            const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${client?.name}*, aquí el resumen:\n\n${lines}\n\n💵 *Total: ${formatUSD(order?.totalUSD || totalUSD)}*\n\n*Datos del Pago Movil*\n👤 Rafael Garrido\n📱 04143047502\nV-13536210\n🏦 0102 (Banco de Venezuela)\n\n_La KZ POS by #JDMRules_\nSiguenos en @lakz_ct`
             window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank')
         } catch (err) {
             console.error(err)
