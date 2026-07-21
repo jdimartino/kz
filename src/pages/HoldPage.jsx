@@ -7,7 +7,7 @@ import { useNav } from '../context/NavigationContext'
 import { useOpenOrders } from '../hooks/useOpenOrders'
 import { useMultipleOpenOrderItems } from '../hooks/useOpenOrderItems'
 import { saveHoldOrder, reopenOrder, cancelHoldOrder, appendHoldOrder, getOrderItems, updateHoldOrder } from '../services/orderService'
-import { ensureCustomerByPhone } from '../services/customerService'
+import { ensureCustomerByPhone, findCustomerByPhone } from '../services/customerService'
 import { formatUSD } from '../utils/money'
 import { useToast } from '../components/Toast'
 
@@ -43,12 +43,14 @@ export default function HoldPage() {
         setSaving(true)
         try {
             if (assignMode === 'new' || orders.length === 0) {
+                const customer = await findCustomerByPhone(phone.trim()).catch(() => null)
                 await saveHoldOrder({
                     cashierId: DEFAULT_USER.uid,
                     sessionId: session.id,
                     items,
                     client: { name, phone },
                     notes,
+                    customerId: customer?.id || null,
                 })
                 ensureCustomerByPhone({ name, phone, notes }).catch(() => {})
             } else {

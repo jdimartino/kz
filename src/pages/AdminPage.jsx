@@ -9,10 +9,12 @@ import SessionPanel from '../components/admin/SessionPanel'
 import CategoryPanel from '../components/admin/CategoryPanel'
 import ReportPage from './ReportPage'
 import HistoricalReportPage from './HistoricalReportPage'
+import AddressBookPage from './AddressBookPage'
 
 const TABS = [
     { id: 'products', label: '📦 Productos' },
     { id: 'categories', label: '🏷️ Grupos' },
+    { id: 'clients', label: '👥 Clientes' },
     { id: 'caja', label: '🏪 Caja' },
     { id: 'report', label: '📊 Reporte Hoy' },
     { id: 'historical', label: '📋 Reporte Histórico' },
@@ -103,6 +105,7 @@ export default function AdminPage() {
             <main className="flex-1 p-4 overflow-auto">
                 {activeTab === 'products' && <ProductList />}
                 {activeTab === 'categories' && <CategoryPanel />}
+                {activeTab === 'clients' && <AddressBookPage />}
                 {activeTab === 'caja' && <SessionPanel onSessionOpen={() => setScreen('pos')} />}
                 {activeTab === 'report' && <ReportPage onBack={() => handleTabChange('caja')} />}
                 {activeTab === 'historical' && <HistoricalReportPage />}

@@ -72,10 +72,27 @@ async function trySettleCustomer(customerId, abonoCurrency, abonoRate) {
         where('status', '==', 'open'),
     ))
 
-    if (ordersSnap.empty) return
+    let matchingOrderDocs = ordersSnap.docs
+
+    if (matchingOrderDocs.length === 0) {
+        try {
+            const customerDoc = await getDoc(doc(db, 'customers', customerId))
+            if (customerDoc.exists()) {
+                const customerPhone = (customerDoc.data().phone || '').trim()
+                if (customerPhone) {
+                    const allOpenSnap = await getDocs(query(collection(db, 'orders'), where('status', '==', 'open')))
+                    const norm = (p) => (p || '').replace(/\D/g, '')
+                    const phoneDigits = norm(customerPhone)
+                    matchingOrderDocs = allOpenSnap.docs.filter(d => norm(d.data().client?.phone) === phoneDigits)
+                }
+            }
+        } catch {}
+    }
+
+    if (matchingOrderDocs.length === 0) return
 
     // Tomar la primera orden abierta (normalmente solo una)
-    const orderDoc = ordersSnap.docs[0]
+    const orderDoc = matchingOrderDocs[0]
     const orderData = orderDoc.data()
     const totalUSD = orderData.totalUSD || 0
 

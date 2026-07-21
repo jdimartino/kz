@@ -1,5 +1,5 @@
 // src/services/customerService.js
-import { collection, addDoc, updateDoc, doc, getDocs, query, where, orderBy, limit, serverTimestamp, increment, runTransaction } from 'firebase/firestore'
+import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, where, orderBy, limit, serverTimestamp, increment, runTransaction } from 'firebase/firestore'
 import { db } from '../firebase'
 
 export async function createCustomer({ name, phone, notes }) {
@@ -106,4 +106,8 @@ export async function getCreditHistory(customerId) {
     if (snap.empty) return []
     const data = snap.docs[0].data()
     return (data.creditHistory || []).sort((a, b) => b.date - a.date)
+}
+
+export async function deleteCustomer(customerId) {
+    await deleteDoc(doc(db, 'customers', customerId))
 }

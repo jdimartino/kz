@@ -1,14 +1,14 @@
-// src/hooks/useCustomers.js
+// src/hooks/useAllCustomers.js
 import { useState, useEffect } from 'react'
 import { collection, query, onSnapshot, orderBy } from 'firebase/firestore'
 import { db } from '../firebase'
 
-export function useCustomers() {
+export function useAllCustomers() {
     const [customers, setCustomers] = useState([])
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        const q = query(collection(db, 'customers'), orderBy('lastVisit', 'desc'))
+        const q = query(collection(db, 'customers'), orderBy('name', 'asc'))
         const unsub = onSnapshot(
             q,
             (snap) => {
@@ -17,7 +17,7 @@ export function useCustomers() {
                 setLoading(false)
             },
             (err) => {
-                console.error('useCustomers error:', err)
+                console.error('useAllCustomers error:', err)
                 setLoading(false)
             }
         )

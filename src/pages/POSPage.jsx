@@ -18,6 +18,7 @@ import LogoIcon from '../components/LogoIcon'
 import { formatUSD } from '../utils/money'
 import { getCategoryColor } from '../utils/categoryColors'
 import { useToast } from '../components/Toast'
+import AddressBookPage from './AddressBookPage'
 
 export default function POSPage() {
     const { role } = useAuth()
@@ -26,7 +27,7 @@ export default function POSPage() {
     const { setScreen, setAdminTab, setHoldOrderId, selectedClient, setSelectedClient } = useNav()
     const { products, loading } = useProducts()
     const { categories } = useCategories()
-    const { customers } = useCustomers(200)
+    const { customers } = useCustomers()
     const { orders: holdOrders } = useOpenOrders()
     const watchedOrderIds = useMemo(() => {
         const ids = (holdOrders || []).slice(0, 5).map(o => o.id)
@@ -158,6 +159,7 @@ export default function POSPage() {
     const [abonoHistory, setAbonoHistory] = useState([])
     const [clientAbonosUSD, setClientAbonosUSD] = useState(0)
     const [openAbonosMap, setOpenAbonosMap] = useState({})
+    const [phoneToCustomerId, setPhoneToCustomerId] = useState({})
     const [abonoLoading, setAbonoLoading] = useState(false)
 
     // Refrescar datos de abonos para un cliente y todas las cuentas abiertas
@@ -170,7 +172,18 @@ export default function POSPage() {
         }
         try {
             const openOrders = holdOrders.filter(o => o.status === 'open')
-            const ids = [...new Set(openOrders.map(o => o.customerId).filter(Boolean))]
+            const phoneMap = {}
+            for (const o of openOrders) {
+                const phone = (o.client?.phone || '').trim()
+                if (!o.customerId && phone) {
+                    try {
+                        const customer = await findCustomerByPhone(phone)
+                        if (customer) phoneMap[phone] = customer.id
+                    } catch {}
+                }
+            }
+            setPhoneToCustomerId(phoneMap)
+            const ids = [...new Set(openOrders.map(o => o.customerId || phoneMap[(o.client?.phone || '').trim()]).filter(Boolean))]
             const map = {}
             await Promise.all(ids.map(async (id) => {
                 try { map[id] = await getTotalAbonosByCustomer(id) } catch { map[id] = 0 }
@@ -290,8 +303,8 @@ export default function POSPage() {
         const searchDigits = search.replace(/\D/g, '')
         const filtered = customers.filter(c => {
             if (!search) return true
-            const nameMatch = c.name?.toLowerCase().includes(searchLower)
-            const phoneMatch = c.phone?.includes(search) || norm(c.phone).includes(searchDigits)
+            const nameMatch = c.name?.toLowerCase().trim().includes(searchLower)
+            const phoneMatch = searchDigits && (c.phone?.includes(search) || norm(c.phone).includes(searchDigits))
             return nameMatch || phoneMatch
         })
         const openOrders = holdOrders.filter(o => o.status === 'open')
@@ -306,9 +319,10 @@ export default function POSPage() {
         }))
         const filteredOpens = openClients.filter(o => {
             if (!search) return true
-            const nameMatch = o.name?.toLowerCase().includes(searchLower)
-            const phoneMatch = o.phone?.includes(search) || norm(o.phone).includes(searchDigits)
-            return nameMatch || phoneMatch
+            const nameMatch = o.name?.toLowerCase().trim().includes(searchLower)
+            const phoneMatch = searchDigits && (o.phone?.includes(search) || norm(o.phone).includes(searchDigits))
+            const result = nameMatch || phoneMatch
+            return result
         })
         const openPhones = new Set(openClients.map(o => o.phone))
         const filteredNonOpen = filtered.filter(c => !openPhones.has(c.phone))
@@ -554,7 +568,10 @@ export default function POSPage() {
                              </div>
                          )}
                      </div>
-                    <button onClick={() => setNewClientOpen(true)} className="text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-xl transition-all">➕ Nuevo</button>
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => setPosMode('address-book')} className="text-xs font-bold bg-slate-600/30 hover:bg-slate-600/50 text-slate-300 px-3 py-2 rounded-xl transition-all">📒 Libreta</button>
+                        <button onClick={() => setNewClientOpen(true)} className="text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-xl transition-all">➕ Nuevo</button>
+                    </div>
                 </header>
 
                 <div className="px-4 pt-3">
@@ -569,7 +586,10 @@ export default function POSPage() {
                 <main className="flex-1 px-4 pt-3 space-y-4 overflow-auto pb-8">
                     {/* Pestañas abiertas (siempre visibles y filtrables) */}
                     {filteredOpens.length > 0 && (() => {
-                        const totalAbiertas = filteredOpens.reduce((s, o) => s + Math.max(0, o.totalUSD - (o.customerId ? (openAbonosMap[o.customerId] || 0) : 0)), 0)
+                        const totalAbiertas = filteredOpens.reduce((s, o) => {
+                                        const effectiveId = o.customerId || phoneToCustomerId[o.phone] || null
+                                        return s + Math.max(0, o.totalUSD - (effectiveId ? (openAbonosMap[effectiveId] || 0) : 0))
+                                    }, 0)
                         return (
                         <div>
                             <div className="flex items-center justify-between mb-2">
@@ -578,7 +598,8 @@ export default function POSPage() {
                             </div>
                             <div className="space-y-2">
                                 {filteredOpens.map(o => {
-                                    const restante = Math.max(0, o.totalUSD - (o.customerId ? (openAbonosMap[o.customerId] || 0) : 0))
+                                            const effectiveId = o.customerId || phoneToCustomerId[o.phone] || null
+                                            const restante = Math.max(0, o.totalUSD - (effectiveId ? (openAbonosMap[effectiveId] || 0) : 0))
                                     if (restante <= 0) return null
                                     return (
                                     <div key={o.orderId} className="bg-green-500/5 border border-green-500/10 rounded-2xl px-4 py-3 flex items-center justify-between">
@@ -832,6 +853,22 @@ export default function POSPage() {
                         </div>
                     </div>
                 )}
+            </div>
+        )
+    }
+
+    // ─── Modo: Libreta de Direcciones ────────────────────
+    if (posMode === 'address-book') {
+        return (
+            <div className="min-h-screen bg-[#0F172A] flex flex-col">
+                <header className="bg-[#1E293B] border-b border-white/5 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
+                    <button onClick={() => setPosMode('client')} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-bold text-base px-5 py-3 rounded-xl transition-all">← Clientes</button>
+                    <p className="text-white font-bold text-sm">📒 Libreta de Direcciones</p>
+                    <div className="w-20" />
+                </header>
+                <main className="flex-1 px-4 pt-4 overflow-auto">
+                    <AddressBookPage />
+                </main>
             </div>
         )
     }
