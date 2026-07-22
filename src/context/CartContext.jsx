@@ -53,6 +53,8 @@ function cartReducer(state, action) {
                     )
                     .filter(i => i.qty > 0),
             }
+        case 'LOAD_ITEMS':
+            return { items: action.payload }
         case 'CLEAR_CART':
             return { items: [] }
         default:

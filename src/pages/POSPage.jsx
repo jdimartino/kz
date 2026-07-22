@@ -886,15 +886,7 @@ export default function POSPage() {
         const displayItems = selectedClient?.orderId ? (itemsMap[selectedClient.orderId] || []) : []
 
         const handleGoToProducts = () => {
-            dispatch({ type: 'CLEAR_CART' })
-            displayItems.forEach(item => {
-                dispatch({ type: 'ADD_ITEM', payload: { id: item.productId, name: item.name, emoji: item.emoji, priceUSD: item.unitPriceUSD } })
-                if (item.qty > 1) {
-                    for (let i = 1; i < item.qty; i++) {
-                        dispatch({ type: 'ADD_ITEM', payload: { id: item.productId, name: item.name, emoji: item.emoji, priceUSD: item.unitPriceUSD } })
-                    }
-                }
-            })
+            dispatch({ type: 'LOAD_ITEMS', payload: displayItems })
             setPosMode('client-products')
         }
 
@@ -1063,15 +1055,7 @@ export default function POSPage() {
                          }} className="flex-1 bg-slate-600 hover:bg-slate-500 active:scale-[0.98] text-white font-bold py-3 px-3 rounded-xl transition-all text-sm">💾 Guardar</button>
                         <button onClick={handleGoToProducts} className="flex-1 bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white font-extrabold py-3 px-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 text-sm">➕ Agregar</button>
                         <button onClick={() => {
-                            dispatch({ type: 'CLEAR_CART' })
-                            displayItems.forEach(item => {
-                                dispatch({ type: 'ADD_ITEM', payload: { id: item.productId, name: item.name, emoji: item.emoji, priceUSD: item.unitPriceUSD } })
-                                if (item.qty > 1) {
-                                    for (let i = 1; i < item.qty; i++) {
-                                        dispatch({ type: 'ADD_ITEM', payload: { id: item.productId, name: item.name, emoji: item.emoji, priceUSD: item.unitPriceUSD } })
-                                    }
-                                }
-                            })
+                            dispatch({ type: 'LOAD_ITEMS', payload: displayItems })
                             setHoldOrderId(selectedClient?.orderId); setScreen('ticket')
                         }} className="flex-1 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-extrabold py-3 px-3 rounded-xl transition-all text-sm">💳 Cobrar</button>
                         <button onClick={handleWhatsAppSummary} className="flex-1 bg-green-600/15 hover:bg-green-600/25 border border-green-500/20 active:scale-[0.98] text-green-400 font-bold py-3 px-3 rounded-xl transition-all text-sm">📱 WhatsApp</button>

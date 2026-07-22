@@ -8,6 +8,15 @@ import { db } from '../firebase'
 import { findCustomerByPhone } from './customerService'
 
 /**
+ * Fusiona logs preservando los originales de Firestore y agregando solo entradas nuevas.
+ */
+function mergeLogs(firestoreLog, cartLog) {
+    if (firestoreLog.length === 0) return cartLog
+    if (cartLog.length <= firestoreLog.length) return firestoreLog
+    return [...firestoreLog, ...cartLog.slice(firestoreLog.length)]
+}
+
+/**
  * Reserva el siguiente número de factura usando un contador atómico.
  * Colección: counters/invoices -> { current: N }
  */
@@ -198,13 +207,16 @@ export async function updateHoldOrder(orderId, items) {
         return acc
     }, [])
 
+    const existingSnap = await getDocs(collection(db, 'orders', orderId, 'items'))
+    const existingMap = {}
+    existingSnap.docs.forEach(d => { existingMap[d.id] = d.data() })
+
     const batch = writeBatch(db)
     const orderRef = doc(db, 'orders', orderId)
     const totalUSD = merged.reduce((s, i) => s + Number(i.subtotalUSD), 0)
 
     batch.update(orderRef, { totalUSD, itemCount: merged.length, updatedAt: serverTimestamp() })
 
-    const existingSnap = await getDocs(collection(db, 'orders', orderId, 'items'))
     const existingIds = new Set(existingSnap.docs.map(d => d.id))
     const newIds = new Set(merged.map(i => i.productId))
 
@@ -216,13 +228,15 @@ export async function updateHoldOrder(orderId, items) {
 
     for (const item of merged) {
         const itemRef = doc(db, 'orders', orderId, 'items', item.productId)
+        const firestoreItem = existingMap[item.productId]
+        const mergedLog = mergeLogs(firestoreItem?.log || [], item.log || [])
         batch.set(itemRef, {
             name: item.name,
             emoji: item.emoji,
             qty: item.qty,
             unitPriceUSD: item.unitPriceUSD,
             subtotalUSD: item.subtotalUSD,
-            log: item.log || [],
+            log: mergedLog,
         })
     }
 

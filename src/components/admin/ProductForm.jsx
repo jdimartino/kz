@@ -20,9 +20,10 @@ export default function ProductForm({ product, onClose }) {
         e.preventDefault()
         const price = parseFloat(form.priceUSD)
         if (isNaN(price) || price <= 0) { setError('El precio debe ser mayor a 0'); return }
+        if (!form.category) { setError('Selecciona una categoría'); return }
         setSaving(true)
         try {
-            const payload = { ...form, priceUSD: price, category: form.category || 'Otros' }
+            const payload = { ...form, priceUSD: price }
             if (editing) await updateProduct(product.id, payload)
             else await createProduct(payload)
             onClose()
@@ -95,7 +96,7 @@ export default function ProductForm({ product, onClose }) {
                             onChange={e => set('category', e.target.value)}
                             className="input-field mt-1"
                         >
-                            {categories.length === 0 && <option value="">Sin grupos</option>}
+                            <option value="" disabled>Seleccionar...</option>
                             {categories.map(cat => (
                                 <option key={cat.id} value={cat.name}>
                                     {cat.name}
