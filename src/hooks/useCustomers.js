@@ -1,6 +1,6 @@
 // src/hooks/useCustomers.js
 import { useState, useEffect } from 'react'
-import { collection, query, onSnapshot, orderBy } from 'firebase/firestore'
+import { collection, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase'
 
 export function useCustomers() {
@@ -8,11 +8,16 @@ export function useCustomers() {
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        const q = query(collection(db, 'customers'), orderBy('lastVisit', 'desc'))
+        const q = collection(db, 'customers')
         const unsub = onSnapshot(
             q,
             (snap) => {
                 const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                list.sort((a, b) => {
+                    const ta = a.lastVisit?.seconds || 0
+                    const tb = b.lastVisit?.seconds || 0
+                    return tb - ta
+                })
                 setCustomers(list)
                 setLoading(false)
             },

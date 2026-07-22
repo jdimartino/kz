@@ -2,7 +2,9 @@
 // Libreta de Direcciones - Content-only component (rendered inside AdminPage or POSPage wrapper)
 import { useState, useMemo } from 'react'
 import { useAllCustomers } from '../hooks/useAllCustomers'
-import { createCustomer, updateCustomer, deleteCustomer, getCustomerHistory, addCredit } from '../services/customerService'
+import { createCustomer, updateCustomer, deleteCustomer, getCustomerHistory, addCredit, findCustomerByPhone, findCustomerByName } from '../services/customerService'
+import { consumeCustomerAbonos } from '../services/abonoService'
+import { getOrderItems } from '../services/orderService'
 import { formatUSD } from '../utils/money'
 import { useToast } from '../components/Toast'
 
@@ -28,6 +30,9 @@ export default function AddressBookPage() {
     const [viewingClient, setViewingClient] = useState(null)
     const [clientOrders, setClientOrders] = useState([])
     const [ordersLoading, setOrdersLoading] = useState(false)
+    const [expandedOrderId, setExpandedOrderId] = useState(null)
+    const [expandedOrderItems, setExpandedOrderItems] = useState([])
+    const [itemsLoading, setItemsLoading] = useState(false)
 
     const [creditModalOpen, setCreditModalOpen] = useState(false)
     const [creditClientData, setCreditClientData] = useState(null)
@@ -48,8 +53,28 @@ export default function AddressBookPage() {
 
     const handleCreateClient = async () => {
         if (!newName.trim() || !newPhone.trim()) return
+
+        const trimmedName = newName.trim()
+        const trimmedPhone = newPhone.trim()
+
         try {
-            await createCustomer({ name: newName, phone: newPhone, notes: newNotes })
+            const existingPhone = await findCustomerByPhone(trimmedPhone)
+            if (existingPhone) {
+                toast.error(`Ya existe un cliente con el teléfono ${trimmedPhone} (${existingPhone.name})`)
+                return
+            }
+            const existingName = await findCustomerByName(trimmedName)
+            if (existingName) {
+                toast.error(`Ya existe un cliente con el nombre "${trimmedName}"`)
+                return
+            }
+        } catch {
+            toast.error('Error al verificar duplicados.')
+            return
+        }
+
+        try {
+            await createCustomer({ name: trimmedName, phone: trimmedPhone, notes: newNotes })
             toast.success('Cliente creado correctamente.')
             setNewClientOpen(false)
             setNewName('')
@@ -71,8 +96,29 @@ export default function AddressBookPage() {
 
     const handleSaveEditClient = async () => {
         if (!editName.trim() || !editPhone.trim() || !editClientData?.id) return
+
+        const trimmedName = editName.trim()
+        const trimmedPhone = editPhone.trim()
+        const currentId = editClientData.id
+
         try {
-            await updateCustomer(editClientData.id, { name: editName, phone: editPhone, notes: editNotes })
+            const existingPhone = await findCustomerByPhone(trimmedPhone)
+            if (existingPhone && existingPhone.id !== currentId) {
+                toast.error(`Ya existe otro cliente con el teléfono ${trimmedPhone} (${existingPhone.name})`)
+                return
+            }
+            const existingName = await findCustomerByName(trimmedName)
+            if (existingName && existingName.id !== currentId) {
+                toast.error(`Ya existe otro cliente con el nombre "${trimmedName}"`)
+                return
+            }
+        } catch {
+            toast.error('Error al verificar duplicados.')
+            return
+        }
+
+        try {
+            await updateCustomer(currentId, { name: trimmedName, phone: trimmedPhone, notes: editNotes })
             toast.success('Cliente actualizado correctamente.')
             setEditClientOpen(false)
             setEditClientData(null)
@@ -119,6 +165,17 @@ export default function AddressBookPage() {
         }
     }
 
+    const handleClearAbonos = async (client) => {
+        if (!client?.id) return
+        try {
+            await consumeCustomerAbonos(client.id)
+            toast.success(`Abonos de ${client.name} marcados como usados.`)
+        } catch (err) {
+            console.error(err)
+            toast.error('Error al limpiar abonos.')
+        }
+    }
+
     const handleAddCredit = async () => {
         if (!creditClientData?.id || !creditAmount || parseFloat(creditAmount) <= 0) return
         try {
@@ -155,16 +212,62 @@ export default function AddressBookPage() {
                 ) : (
                     <div className="space-y-2">
                         {clientOrders.map(o => (
-                            <div key={o.id} className="bg-[#1E293B] rounded-2xl px-4 py-3 flex justify-between items-center border border-white/5">
-                                <div>
-                                    <p className="text-white text-xs font-semibold">
-                                        {o.createdAt?.seconds ? new Date(o.createdAt.seconds * 1000).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date(o.createdAt.seconds * 1000).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' }) : '—'}
-                                    </p>
-                                    <p className="text-slate-500 text-[10px]">
-                                        {o.invoiceNumber ? `#${String(o.invoiceNumber).padStart(4, '0')}` : ''} · {o.paymentMethod}
-                                    </p>
+                            <div key={o.id}>
+                                <div
+                                    onClick={async () => {
+                                        if (expandedOrderId === o.id) {
+                                            setExpandedOrderId(null)
+                                            setExpandedOrderItems([])
+                                            return
+                                        }
+                                        setExpandedOrderId(o.id)
+                                        setItemsLoading(true)
+                                        try {
+                                            const items = await getOrderItems(o.id)
+                                            setExpandedOrderItems(items)
+                                        } catch {
+                                            setExpandedOrderItems([])
+                                        } finally {
+                                            setItemsLoading(false)
+                                        }
+                                    }}
+                                    className={`bg-[#1E293B] rounded-2xl px-4 py-3 flex justify-between items-center border transition-colors cursor-pointer ${expandedOrderId === o.id ? 'border-blue-500/30 bg-blue-500/5' : 'border-white/5 hover:bg-white/5'}`}
+                                >
+                                    <div>
+                                        <p className="text-white text-xs font-semibold">
+                                            {o.createdAt?.seconds ? new Date(o.createdAt.seconds * 1000).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date(o.createdAt.seconds * 1000).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' }) : '—'}
+                                        </p>
+                                        <p className="text-slate-500 text-[10px]">
+                                            {o.invoiceNumber ? `#${String(o.invoiceNumber).padStart(4, '0')}` : ''} · {o.paymentMethod}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-blue-400 font-extrabold text-sm">{formatUSD(o.totalUSD || 0)}</p>
+                                        <p className="text-slate-600 text-[10px]">{expandedOrderId === o.id ? '▲' : '▼'}</p>
+                                    </div>
                                 </div>
-                                <p className="text-blue-400 font-extrabold text-sm">{formatUSD(o.totalUSD || 0)}</p>
+                                {expandedOrderId === o.id && (
+                                    <div className="bg-[#1a2332] rounded-b-2xl px-4 py-3 border border-t-0 border-blue-500/20 -mt-1">
+                                        {itemsLoading ? (
+                                            <div className="flex items-center justify-center py-4"><div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>
+                                        ) : expandedOrderItems.length === 0 ? (
+                                            <p className="text-slate-500 text-[11px] text-center py-2">Sin ítems</p>
+                                        ) : (
+                                            <div className="space-y-1.5">
+                                                {expandedOrderItems.map(item => (
+                                                    <div key={item.productId} className="flex justify-between items-center">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-sm">{item.emoji || '📦'}</span>
+                                                            <span className="text-white text-[11px]">{item.name}</span>
+                                                            <span className="text-slate-500 text-[10px]">×{item.qty}</span>
+                                                        </div>
+                                                        <span className="text-slate-300 text-[11px] font-semibold">{formatUSD(item.subtotalUSD || 0)}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -222,6 +325,7 @@ export default function AddressBookPage() {
                                 <button onClick={() => handleViewHistory(c)} className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-slate-600/20 text-slate-400 hover:bg-slate-600/30 transition-colors">📋 Historial</button>
                                 <button onClick={() => handleEditClient(c)} className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-slate-600/20 text-slate-400 hover:bg-slate-600/30 transition-colors">✏️ Editar</button>
                                 <button onClick={() => { setCreditClientData(c); setCreditAmount(''); setCreditModalOpen(true) }} className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors">💰 Crédito</button>
+                                <button onClick={() => handleClearAbonos(c)} className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors">🧹 Abonos</button>
                                 <button onClick={() => handleConfirmDelete(c)} className="text-[11px] font-bold py-2 px-3 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors">🗑️</button>
                             </div>
                         </div>

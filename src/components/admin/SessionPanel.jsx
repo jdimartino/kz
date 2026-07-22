@@ -11,7 +11,6 @@ import { useToast } from '../Toast'
 
 const RATE_ENDPOINTS = [
     'https://ve.dolarapi.com/v1/dolares/oficial',
-    'https://api.dolarapi.com/v1/dolar',
 ]
 
 export default function SessionPanel({ onSessionOpen }) {

@@ -7,7 +7,7 @@ import { useNav } from '../context/NavigationContext'
 import { saveOrder, nextInvoiceNumber, completeHoldOrder } from '../services/orderService'
 import { formatUSD, formatBs, usdToBs, bsToUsd, calcChange } from '../utils/money'
 import { updateCustomerStats, deductCredit, findCustomerByPhone } from '../services/customerService'
-import { getAbonosByCustomer } from '../services/abonoService'
+import { getAbonosByCustomer, consumeCustomerAbonos } from '../services/abonoService'
 import { useToast } from '../components/Toast'
 
 const METHODS = [
@@ -58,7 +58,7 @@ export default function TicketPage() {
             if (selectedClient?.phone) {
                 try {
                     const abonos = await getAbonosByCustomer(selectedClient.id || '')
-                    const totalAbonos = abonos.reduce((sum, a) => sum + (a.amount || 0), 0)
+                    const totalAbonos = abonos.reduce((sum, a) => sum + (a.amountUSD || 0), 0)
                     setAbonosApplied(totalAbonos)
                 } catch { setAbonosApplied(0) }
             }
@@ -194,6 +194,9 @@ export default function TicketPage() {
             if (holdOrderId) {
                 await completeHoldOrder(holdOrderId)
                 setHoldOrderId(null)
+            }
+            if (customerId) {
+                await consumeCustomerAbonos(customerId).catch(() => {})
             }
             setScreen('success')
         } catch (err) {

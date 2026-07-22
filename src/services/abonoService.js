@@ -1,6 +1,6 @@
 // src/services/abonoService.js
 import {
-    collection, addDoc, getDocs, query, where, orderBy,
+    collection, addDoc, getDocs, query, where,
     serverTimestamp, doc, writeBatch, getDoc,
 } from 'firebase/firestore'
 import { db } from '../firebase'
@@ -42,8 +42,7 @@ export async function addAbono({
 export async function getAbonosByCustomer(customerId) {
     const q = query(
         collection(db, 'abonos'),
-        where('customerId', '==', customerId),
-        orderBy('createdAt', 'desc')
+        where('customerId', '==', customerId)
     )
     const snap = await getDocs(q)
     return snap.docs.map(d => {
@@ -53,7 +52,23 @@ export async function getAbonosByCustomer(customerId) {
             ...data,
             amountUSD: data.amountUSD ?? (data.amount || 0),
         }
+    }).filter(a => !a.used).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+}
+
+export async function consumeCustomerAbonos(customerId) {
+    const q = query(
+        collection(db, 'abonos'),
+        where('customerId', '==', customerId)
+    )
+    const snap = await getDocs(q)
+    const batch = writeBatch(db)
+    snap.docs.forEach(d => {
+        const data = d.data()
+        if (!data.used) {
+            batch.update(doc(db, 'abonos', d.id), { used: true })
+        }
     })
+    await batch.commit()
 }
 
 export async function getTotalAbonosByCustomer(customerId) {

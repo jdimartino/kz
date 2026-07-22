@@ -10,8 +10,8 @@ import { useCustomers } from '../hooks/useCustomers'
 import { useOpenOrders } from '../hooks/useOpenOrders'
 import { useMultipleOpenOrderItems } from '../hooks/useOpenOrderItems'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
-import { saveHoldOrder, appendHoldOrder, updateHoldOrder, cancelHoldOrder, getOrderItems, fixOpenOrdersCustomerIds } from '../services/orderService'
-import { createCustomer, ensureCustomerByPhone, getCustomerHistory, updateCustomer, addCredit, findCustomerByPhone } from '../services/customerService'
+import { saveHoldOrder, appendHoldOrder, updateHoldOrder, cancelHoldOrder, getOrderItems, completeHoldOrder } from '../services/orderService'
+import { createCustomer, ensureCustomerByPhone, getCustomerHistory, updateCustomer, addCredit, findCustomerByPhone, findCustomerByName } from '../services/customerService'
 import { addAbono, getAbonosByCustomer, getTotalAbonosByCustomer } from '../services/abonoService'
 import { DEFAULT_USER } from '../context/AuthContext'
 import LogoIcon from '../components/LogoIcon'
@@ -40,25 +40,6 @@ export default function POSPage() {
     const toast = useToast()
 
     const [posMode, setPosMode] = useState('select')
-    const [unlinkedOrders, setUnlinkedOrders] = useState([])
-    const [showUnlinkedOrders, setShowUnlinkedOrders] = useState(false) // Toggle para mostrar listado
-
-    // Función para cargar órdenes sin customerId
-    const loadUnlinkedOrders = async () => {
-        try {
-            const q = query(collection(db, 'orders'), where('status', '==', 'open'))
-            const snap = await getDocs(q)
-            const unlinked = snap.docs
-                .map(doc => ({ id: doc.id, ...doc.data() }))
-                .filter(order => !order.customerId)
-            setUnlinkedOrders(unlinked)
-            setShowUnlinkedOrders(true)
-        } catch (err) {
-            console.error('Error cargando órdenes sin customerId:', err)
-            setUnlinkedOrders([])
-            setShowUnlinkedOrders(false)
-        }
-    }
     const [search, setSearch] = useState('')
     const [newClientOpen, setNewClientOpen] = useState(false)
     const [newName, setNewName] = useState('')
@@ -68,80 +49,10 @@ export default function POSPage() {
     const [viewingClient, setViewingClient] = useState(null)
     const [clientOrders, setClientOrders] = useState([])
     const [ordersLoading, setOrdersLoading] = useState(false)
+    const [expandedOrderId, setExpandedOrderId] = useState(null)
+    const [expandedOrderItems, setExpandedOrderItems] = useState([])
+    const [itemsLoading, setItemsLoading] = useState(false)
 
-    // Sección para mostrar órdenes sin customerId
-    const UnlinkedOrdersView = () => {
-        if (!showUnlinkedOrders) return null
-        return (
-            <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex flex-col p-4 overflow-auto">
-                <div className="bg-[#1E293B] rounded-xl p-4 max-w-3xl mx-auto">
-                    <h2 className="text-white font-bold mb-4">Órdenes Abiertas sin customerId: {unlinkedOrders.length}</h2>
-                    <button onClick={() => setShowUnlinkedOrders(false)} className="mb-4 px-4 py-2 bg-red-600 rounded text-white font-bold">Cerrar</button>
-                    <div className="max-h-[60vh] overflow-auto">
-                        {unlinkedOrders.length === 0 && <p className="text-white">No hay órdenes sin customerId.</p>}
-                        <table className="min-w-full text-xs text-white">
-                            <thead>
-                                <tr>
-                                    <th className="border px-2 py-1">ID Orden</th>
-                                    <th className="border px-2 py-1">Teléfono Cliente</th>
-                                    <th className="border px-2 py-1">Nombre Cliente</th>
-                                    <th className="border px-2 py-1">Deuda USD</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {unlinkedOrders.map(order => (
-                                    <tr key={order.id}>
-                                        <td className="border px-2 py-1 font-mono">{order.id}</td>
-                                        <td className="border px-2 py-1">{order.client?.phone || '—'}</td>
-                                        <td className="border px-2 py-1">{order.client?.name || '—'}</td>
-                                        <td className="border px-2 py-1">{order.totalUSD?.toFixed(2) || '0.00'}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        )
-    }
-
-    // Botón y efecto para cargar y mostrar órdenes sin customerId
-    const handleShowUnlinkedOrders = () => {
-        loadUnlinkedOrders()
-    }
-
-    // Función para ejecutar fixOpenOrdersCustomerIds y mostrar resultado
-    const [migrationResult, setMigrationResult] = useState(null)
-    const [migrationLoading, setMigrationLoading] = useState(false)
-
-    const handleRunMigration = async () => {
-        setMigrationLoading(true)
-        setMigrationResult(null)
-        try {
-            const fixedCount = await fixOpenOrdersCustomerIds()
-            setMigrationResult(fixedCount)
-            loadUnlinkedOrders() // Refrescar lista luego de migrar
-        } catch (err) {
-            console.error('Error al ejecutar migración:', err)
-            setMigrationResult('Error: ' + (err.message || err.toString()))
-        } finally {
-            setMigrationLoading(false)
-        }
-    }    
-
-    // Componente temporal para mostrar resultado de migración
-    const MigrationResultView = () => {
-        if (migrationResult === null) return null
-        return (
-            <div className="fixed bottom-16 right-4 z-40 bg-green-600 text-white px-4 py-2 rounded shadow-lg">
-                {typeof migrationResult === 'number'
-                    ? `Migración completada. Órdenes corregidas: ${migrationResult}`
-                    : migrationResult}
-            </div>
-        )
-    }
-
-    
     const [pendingClientCreation, setPendingClientCreation] = useState(null)
     const [expandedLogs, setExpandedLogs] = useState({})
     const [editClientOpen, setEditClientOpen] = useState(false)
@@ -192,10 +103,34 @@ export default function POSPage() {
         } catch {}
     }
 
+    // Refrescar abonos al cambiar de cliente
+    useEffect(() => {
+        if (selectedClient?.id) {
+            refreshAbonos(selectedClient.id)
+        } else {
+            setClientAbonosUSD(0)
+        }
+    }, [selectedClient?.id])
+
     // Cargar abonos de clientes con cuentas abiertas
     useEffect(() => {
         refreshAbonos(null)
     }, [holdOrders])
+
+    // Auto-cerrar órdenes donde los abonos cubren el total
+    useEffect(() => {
+        if (!openAbonosMap || Object.keys(openAbonosMap).length === 0) return
+        const openOrders = holdOrders.filter(o => o.status === 'open')
+        for (const o of openOrders) {
+            const effectiveId = o.customerId || phoneToCustomerId[(o.client?.phone || '').trim()] || null
+            if (!effectiveId) continue
+            const abonado = openAbonosMap[effectiveId] || 0
+            const restante = Math.max(0, (o.totalUSD || 0) - abonado)
+            if (restante <= 0.005) {
+                completeHoldOrder(o.id).catch(() => {})
+            }
+        }
+    }, [openAbonosMap, holdOrders, phoneToCustomerId])
 
     const activeProducts = products.filter(p => p.active)
 
@@ -223,13 +158,6 @@ export default function POSPage() {
             createClientInBackground(pendingClientCreation)
         }
     }, [isOnline, pendingClientCreation])
-
-    // Auto-asignar customerId a órdenes abiertas que no lo tengan
-    useEffect(() => {
-        if (isOnline) {
-            fixOpenOrdersCustomerIds().catch(() => {})
-        }
-    }, [isOnline])
 
     // Cargar total de abonos USD del cliente seleccionado
     useEffect(() => {
@@ -315,6 +243,7 @@ export default function POSPage() {
             totalUSD: o.totalUSD || 0,
             itemCount: o.itemCount || 0,
             createdAt: o.createdAt,
+            updatedAt: o.updatedAt,
             orderId: o.id,
         }))
         const filteredOpens = openClients.filter(o => {
@@ -323,9 +252,9 @@ export default function POSPage() {
             const phoneMatch = searchDigits && (o.phone?.includes(search) || norm(o.phone).includes(searchDigits))
             const result = nameMatch || phoneMatch
             return result
-        })
-        const openPhones = new Set(openClients.map(o => o.phone))
-        const filteredNonOpen = filtered.filter(c => !openPhones.has(c.phone))
+        }).sort((a, b) => (b.updatedAt?.seconds || b.createdAt?.seconds || 0) - (a.updatedAt?.seconds || a.createdAt?.seconds || 0))
+        const matchedOpenPhones = new Set(filteredOpens.map(o => o.phone))
+        const filteredNonOpen = filtered.filter(c => !matchedOpenPhones.has(c.phone))
 
         const handleSelectClient = (client) => {
             const matched = customers.find(c => norm(c.phone) === norm(client.phone))
@@ -357,16 +286,34 @@ export default function POSPage() {
             }
         }
 
-        const handleNewClient = () => {
+        const handleNewClient = async () => {
             if (!newName.trim() || !newPhone.trim()) return
 
+            const trimmedName = newName.trim()
+            const trimmedPhone = newPhone.trim()
+
+            try {
+                const existingPhone = await findCustomerByPhone(trimmedPhone)
+                if (existingPhone) {
+                    toast.error(`Ya existe un cliente con el teléfono ${trimmedPhone} (${existingPhone.name})`)
+                    return
+                }
+                const existingName = await findCustomerByName(trimmedName)
+                if (existingName) {
+                    toast.error(`Ya existe un cliente con el nombre "${trimmedName}"`)
+                    return
+                }
+            } catch {
+                toast.error('Error al verificar duplicados.')
+                return
+            }
+
             const clientData = {
-                name: newName.trim(),
-                phone: newPhone.trim(),
+                name: trimmedName,
+                phone: trimmedPhone,
                 notes: newNotes.trim()
             }
 
-            // Optimistic UI - cerrar inmediatamente
             setNewClientOpen(false)
             setNewName('')
             setNewPhone('')
@@ -375,9 +322,7 @@ export default function POSPage() {
             setSelectedClient({ ...clientData, id: null })
             setPosMode('client-products')
 
-            // Crear en segundo plano
             createClientInBackground(clientData).catch(() => {
-                // Guardar pendiente en localStorage para reintentos
                 localStorage.setItem('pendingClientCreation', JSON.stringify(clientData))
                 setPendingClientCreation(clientData)
             })
@@ -416,8 +361,29 @@ export default function POSPage() {
 
         const handleSaveEditClient = async () => {
             if (!editName.trim() || !editPhone.trim() || !editClientData?.id) return
+
+            const trimmedName = editName.trim()
+            const trimmedPhone = editPhone.trim()
+            const currentId = editClientData.id
+
             try {
-                await updateCustomer(editClientData.id, { name: editName, phone: editPhone, notes: editNotes })
+                const existingPhone = await findCustomerByPhone(trimmedPhone)
+                if (existingPhone && existingPhone.id !== currentId) {
+                    toast.error(`Ya existe otro cliente con el teléfono ${trimmedPhone} (${existingPhone.name})`)
+                    return
+                }
+                const existingName = await findCustomerByName(trimmedName)
+                if (existingName && existingName.id !== currentId) {
+                    toast.error(`Ya existe otro cliente con el nombre "${trimmedName}"`)
+                    return
+                }
+            } catch {
+                toast.error('Error al verificar duplicados.')
+                return
+            }
+
+            try {
+                await updateCustomer(currentId, { name: trimmedName, phone: trimmedPhone, notes: editNotes })
                 toast.success('Cliente actualizado correctamente.')
                 setEditClientOpen(false)
                 setEditClientData(null)
@@ -465,6 +431,7 @@ export default function POSPage() {
                     amountEntered: amount,
                     currency: abonoCurrency,
                     exchangeRateUsed: abonoCurrency === 'BS' ? rate : null,
+                    orderId: abonoClientData.orderId || null,
                 })
                 toast.success(`${abonoCurrency === 'USD' ? '$' : 'Bs'}${amount.toFixed(2)} abonados a la cuenta de ${abonoClientData.name}`)
                 setAbonoModalOpen(false)
@@ -525,32 +492,67 @@ export default function POSPage() {
                         ) : (
                             <div className="space-y-2">
                                 {clientOrders.map(o => (
-                                    <div key={o.id} className="bg-[#1E293B] rounded-2xl px-4 py-3 flex justify-between items-center border border-white/5">
-                                        <div>
-                                            <p className="text-white text-xs font-semibold">
-                                                {o.createdAt?.seconds ? new Date(o.createdAt.seconds * 1000).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date(o.createdAt.seconds * 1000).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' }) : '—'}
-                                            </p>
-                                            <p className="text-slate-500 text-[10px]">
-                                                {o.invoiceNumber ? `#${String(o.invoiceNumber).padStart(4, '0')}` : ''} · {o.paymentMethod}
-                                            </p>
+                                    <div key={o.id}>
+                                        <div
+                                            onClick={async () => {
+                                                if (expandedOrderId === o.id) {
+                                                    setExpandedOrderId(null)
+                                                    setExpandedOrderItems([])
+                                                    return
+                                                }
+                                                setExpandedOrderId(o.id)
+                                                setItemsLoading(true)
+                                                try {
+                                                    const items = await getOrderItems(o.id)
+                                                    setExpandedOrderItems(items)
+                                                } catch {
+                                                    setExpandedOrderItems([])
+                                                } finally {
+                                                    setItemsLoading(false)
+                                                }
+                                            }}
+                                            className={`bg-[#1E293B] rounded-2xl px-4 py-3 flex justify-between items-center border transition-colors cursor-pointer ${expandedOrderId === o.id ? 'border-blue-500/30 bg-blue-500/5' : 'border-white/5 hover:bg-white/5'}`}
+                                        >
+                                            <div>
+                                                <p className="text-white text-xs font-semibold">
+                                                    {o.createdAt?.seconds ? new Date(o.createdAt.seconds * 1000).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date(o.createdAt.seconds * 1000).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' }) : '—'}
+                                                </p>
+                                                <p className="text-slate-500 text-[10px]">
+                                                    {o.invoiceNumber ? `#${String(o.invoiceNumber).padStart(4, '0')}` : ''} · {o.paymentMethod}
+                                                </p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <p className="text-blue-400 font-extrabold text-sm">{formatUSD(o.totalUSD || 0)}</p>
+                                                <p className="text-slate-600 text-[10px]">{expandedOrderId === o.id ? '▲' : '▼'}</p>
+                                            </div>
                                         </div>
-                                        <p className="text-blue-400 font-extrabold text-sm">{formatUSD(o.totalUSD || 0)}</p>
+                                        {expandedOrderId === o.id && (
+                                            <div className="bg-[#1a2332] rounded-b-2xl px-4 py-3 border border-t-0 border-blue-500/20 -mt-1">
+                                                {itemsLoading ? (
+                                                    <div className="flex items-center justify-center py-4"><div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>
+                                                ) : expandedOrderItems.length === 0 ? (
+                                                    <p className="text-slate-500 text-[11px] text-center py-2">Sin ítems</p>
+                                                ) : (
+                                                    <div className="space-y-1.5">
+                                                        {expandedOrderItems.map(item => (
+                                                            <div key={item.productId} className="flex justify-between items-center">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-sm">{item.emoji || '📦'}</span>
+                                                                    <span className="text-white text-[11px]">{item.name}</span>
+                                                                    <span className="text-slate-500 text-[10px]">×{item.qty}</span>
+                                                                </div>
+                                                                <span className="text-slate-300 text-[11px] font-semibold">{formatUSD(item.subtotalUSD || 0)}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 ))}
                             </div>
                         )}
         </main>
-        {/* Botón para mostrar órdenes sin customerId */}
-        <footer className="fixed bottom-4 left-4 z-50 flex flex-col gap-3 bg-[#1E293B] border border-white/10 rounded-xl p-3 shadow-lg">
-            <button onClick={handleShowUnlinkedOrders} className="bg-red-600 hover:bg-red-700 text-white px-5 py-3 rounded-xl font-semibold shadow-lg">Mostrar órdenes sin customerId</button>
-            <button disabled={migrationLoading} onClick={handleRunMigration} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-3 rounded-xl font-semibold shadow-lg">
-                {migrationLoading ? 'Migrando...' : 'Corregir órdenes sin customerId'}
-            </button>
-        </footer>  
-        
-        {/* Componente Modal para mostrar órdenes sin customerId */}
-        <UnlinkedOrdersView />
-        <MigrationResultView />
     </div>
             )
         }
@@ -587,7 +589,7 @@ export default function POSPage() {
                     {/* Pestañas abiertas (siempre visibles y filtrables) */}
                     {filteredOpens.length > 0 && (() => {
                         const totalAbiertas = filteredOpens.reduce((s, o) => {
-                                        const effectiveId = o.customerId || phoneToCustomerId[o.phone] || null
+                                        const effectiveId = o.id || phoneToCustomerId[o.phone?.trim()] || null
                                         return s + Math.max(0, o.totalUSD - (effectiveId ? (openAbonosMap[effectiveId] || 0) : 0))
                                     }, 0)
                         return (
@@ -598,17 +600,22 @@ export default function POSPage() {
                             </div>
                             <div className="space-y-2">
                                 {filteredOpens.map(o => {
-                                            const effectiveId = o.customerId || phoneToCustomerId[o.phone] || null
+                                            const effectiveId = o.id || phoneToCustomerId[o.phone?.trim()] || null
                                             const restante = Math.max(0, o.totalUSD - (effectiveId ? (openAbonosMap[effectiveId] || 0) : 0))
                                     if (restante <= 0) return null
                                     return (
                                     <div key={o.orderId} className="bg-green-500/5 border border-green-500/10 rounded-2xl px-4 py-3 flex items-center justify-between">
                                         <button onClick={() => handleSelectClient({ id: o.id, name: o.name, phone: o.phone, orderId: o.orderId })} className="flex-1 text-left">
                                             <p className="text-white font-semibold text-sm">{o.name}</p>
+                                            {openAbonosMap[effectiveId] > 0 && (
+                                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400 border border-green-500/20">
+                                                    💰 Abonado: {formatUSD(openAbonosMap[effectiveId])}
+                                                </span>
+                                            )}
                                             <p className="text-slate-400 text-xs">{o.phone}</p>
                                         </button>
                                         <div className="flex items-center gap-2 shrink-0 ml-2">
-                                            <button onClick={(e) => { e.stopPropagation(); handleOpenAbono({ id: o.customerId || null, name: o.name, phone: o.phone, totalUSD: o.totalUSD }) }} className="text-[10px] font-bold px-2 py-1.5 rounded-lg bg-green-500/15 text-green-400 hover:bg-green-500/25 transition-colors">💰 Abonar</button>
+                                            <button onClick={(e) => { e.stopPropagation(); handleOpenAbono({ id: o.customerId || null, name: o.name, phone: o.phone, totalUSD: o.totalUSD, orderId: o.orderId }) }} className="text-[10px] font-bold px-2 py-1.5 rounded-lg bg-green-500/15 text-green-400 hover:bg-green-500/25 transition-colors">💰 Abonar</button>
                                             <div className="text-right">
                                                 <p className="text-blue-400 font-extrabold">{formatUSD(restante)}</p>
                                                 <p className="text-slate-500 text-[10px]">{o.itemCount} ítems</p>
@@ -1048,7 +1055,13 @@ export default function POSPage() {
                 <div className="fixed bottom-0 left-0 right-0 z-20 p-4" style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
                     <div className="flex gap-2">
                          <button onClick={() => setPosMode('client')} className="flex-1 bg-slate-700 hover:bg-slate-600 active:scale-[0.98] text-white font-bold py-3 px-3 rounded-xl transition-all text-sm">← Volver</button>
-                        <button onClick={handleGoToProducts} className="flex-[2] bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white font-extrabold py-3 px-5 rounded-xl transition-all shadow-lg shadow-blue-600/30 text-sm">➕ Agregar Productos</button>
+                         <button onClick={async () => {
+                             if (selectedClient?.orderId && displayItems.length > 0) {
+                                 try { await updateHoldOrder(selectedClient.orderId, displayItems) } catch {}
+                             }
+                             setPosMode('client')
+                         }} className="flex-1 bg-slate-600 hover:bg-slate-500 active:scale-[0.98] text-white font-bold py-3 px-3 rounded-xl transition-all text-sm">💾 Guardar</button>
+                        <button onClick={handleGoToProducts} className="flex-1 bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white font-extrabold py-3 px-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 text-sm">➕ Agregar</button>
                         <button onClick={() => {
                             dispatch({ type: 'CLEAR_CART' })
                             displayItems.forEach(item => {
@@ -1146,11 +1159,7 @@ export default function POSPage() {
             {/* Header */}
             <header className="bg-[#1E293B] border-b border-white/5 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
                 <div className="flex items-center gap-2">
-                    {isClientMode ? (
-                        <button onClick={() => { handleSaveTab(); setPosMode('client') }} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-bold text-base px-5 py-3 rounded-xl transition-all">💾 Guardar y Regresar</button>
-                    ) : (
-                        <button onClick={() => setPosMode('select')} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-bold text-base px-5 py-3 rounded-xl transition-all">← Inicio</button>
-                    )}
+                    <button onClick={() => setPosMode('client')} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-bold text-base px-5 py-3 rounded-xl transition-all">← Clientes</button>
                 </div>
                 <div className="text-right">
                      {isClientMode && client && (
@@ -1245,7 +1254,8 @@ export default function POSPage() {
                             {isClientMode ? (
                                 <>
                                     <button onClick={() => { handleSaveTab(); setPosMode('client') }} className="flex-1 bg-slate-700 hover:bg-slate-600 active:scale-[0.98] text-white font-bold py-3 px-3 rounded-xl transition-all text-sm">← Regresar</button>
-                                    <button onClick={handleCharge} className="flex-[2] bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white font-extrabold py-3 px-5 rounded-xl transition-all shadow-lg shadow-blue-600/30 text-sm">💳 Cobrar {formatUSD(totalUSD)}</button>
+                                    <button onClick={handleCharge} className="flex-1 bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white font-extrabold py-3 px-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 text-sm">💳 Cobrar {formatUSD(totalUSD)}</button>
+                                    <button onClick={() => { handleSaveTab(); setPosMode('client') }} className="flex-1 bg-slate-600 hover:bg-slate-500 active:scale-[0.98] text-white font-bold py-3 px-3 rounded-xl transition-all text-sm">💾 Guardar</button>
                                     <button onClick={handleWhatsApp} className="flex-1 bg-green-600/15 hover:bg-green-600/25 border border-green-500/20 active:scale-[0.98] text-green-400 font-bold py-3 px-3 rounded-xl transition-all text-sm">📱 WhatsApp</button>
                                 </>
                             ) : (

@@ -16,7 +16,7 @@ export function useOpenOrders() {
         )
         const unsub = onSnapshot(q, snap => {
             const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-            docs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+            docs.sort((a, b) => (b.updatedAt?.seconds || b.createdAt?.seconds || 0) - (a.updatedAt?.seconds || a.createdAt?.seconds || 0))
             setOrders(docs)
             setLoading(false)
         })

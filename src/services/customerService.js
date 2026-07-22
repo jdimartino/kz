@@ -23,6 +23,14 @@ export async function findCustomerByPhone(phone) {
     return { id: d.id, ...d.data() }
 }
 
+export async function findCustomerByName(name) {
+    const q = query(collection(db, 'customers'), where('name', '==', name.trim()), limit(1))
+    const snap = await getDocs(q)
+    if (snap.empty) return null
+    const d = snap.docs[0]
+    return { id: d.id, ...d.data() }
+}
+
 export async function updateCustomerStats(customerId, { totalUSD }) {
     const ref = doc(db, 'customers', customerId)
     await updateDoc(ref, {

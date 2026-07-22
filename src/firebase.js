@@ -2,7 +2,7 @@
 // Proyecto: kz-pos
 
 import { initializeApp } from 'firebase/app'
-import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore'
+import { initializeFirestore, persistentLocalCache } from 'firebase/firestore'
 
 const firebaseConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -16,12 +16,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig)
 
-export const db = getFirestore(app)
-
-enableIndexedDbPersistence(db).catch((err) => {
-    if (err.code === 'failed-precondition') {
-        console.warn('Firestore offline: múltiples pestañas abiertas')
-    } else if (err.code === 'unimplemented') {
-        console.warn('Firestore offline: navegador no soportado')
-    }
+export const db = initializeFirestore(app, {
+    localCache: persistentLocalCache()
 })
