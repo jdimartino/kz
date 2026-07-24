@@ -1,12 +1,9 @@
 // src/services/abonoService.js
 import {
     collection, addDoc, getDocs, query, where,
-    serverTimestamp, doc, writeBatch, getDoc,
+    serverTimestamp, doc, writeBatch,
 } from 'firebase/firestore'
 import { db } from '../firebase'
-import { nextInvoiceNumber } from './orderService'
-import { updateCustomerStats } from './customerService'
-import { usdToBs } from '../utils/money'
 
 export async function addAbono({
     customerId,
@@ -32,9 +29,6 @@ export async function addAbono({
         note: note.trim(),
         createdAt: serverTimestamp(),
     })
-
-    // Intentar settlement si la deuda llega a 0
-    await trySettleCustomer(customerId, currency, exchangeRateUsed).catch(() => {})
 
     return { id: ref.id, customerId, customerName, amountEntered, currency, exchangeRateUsed, amountUSD, orderId, note }
 }
@@ -71,6 +65,44 @@ export async function consumeCustomerAbonos(customerId) {
     await batch.commit()
 }
 
+/**
+ * Consume solo la porción necesaria de abonos (FIFO: los más antiguos primero).
+ * Reduce amountUSD y amount proporcionalmente. Si un abono se consume totalmente,
+ * se marca como used: true.
+ */
+export async function consumePartialAbonos(customerId, amountToConsumeUSD) {
+    if (!amountToConsumeUSD || amountToConsumeUSD <= 0) return
+
+    const abonos = await getAbonosByCustomer(customerId)
+    if (abonos.length === 0) return
+
+    const batch = writeBatch(db)
+    let remaining = amountToConsumeUSD
+
+    for (const abono of abonos) {
+        if (remaining <= 0) break
+
+        const abonoUSD = abono.amountUSD || 0
+        if (abonoUSD <= 0) continue
+
+        if (abonoUSD <= remaining) {
+            batch.update(doc(db, 'abonos', abono.id), { used: true })
+            remaining -= abonoUSD
+        } else {
+            const newAmountUSD = abonoUSD - remaining
+            const ratio = abono.amount ? (newAmountUSD / abonoUSD) : 0
+            const newAmount = abono.amount ? abono.amount * ratio : newAmountUSD
+            batch.update(doc(db, 'abonos', abono.id), {
+                amountUSD: newAmountUSD,
+                amount: newAmount,
+            })
+            remaining = 0
+        }
+    }
+
+    await batch.commit()
+}
+
 export async function getTotalAbonosByCustomer(customerId) {
     const abonos = await getAbonosByCustomer(customerId)
     return abonos.reduce((sum, a) => sum + (a.amountUSD || 0), 0)
@@ -78,113 +110,4 @@ export async function getTotalAbonosByCustomer(customerId) {
 
 export async function getTotalAbonosUSDForOpenOrder(customerId) {
     return getTotalAbonosByCustomer(customerId)
-}
-
-async function trySettleCustomer(customerId, abonoCurrency, abonoRate) {
-    const ordersSnap = await getDocs(query(
-        collection(db, 'orders'),
-        where('customerId', '==', customerId),
-        where('status', '==', 'open'),
-    ))
-
-    let matchingOrderDocs = ordersSnap.docs
-
-    if (matchingOrderDocs.length === 0) {
-        try {
-            const customerDoc = await getDoc(doc(db, 'customers', customerId))
-            if (customerDoc.exists()) {
-                const customerPhone = (customerDoc.data().phone || '').trim()
-                if (customerPhone) {
-                    const allOpenSnap = await getDocs(query(collection(db, 'orders'), where('status', '==', 'open')))
-                    const norm = (p) => (p || '').replace(/\D/g, '')
-                    const phoneDigits = norm(customerPhone)
-                    matchingOrderDocs = allOpenSnap.docs.filter(d => norm(d.data().client?.phone) === phoneDigits)
-                }
-            }
-        } catch {}
-    }
-
-    if (matchingOrderDocs.length === 0) return
-
-    // Tomar la primera orden abierta (normalmente solo una)
-    const orderDoc = matchingOrderDocs[0]
-    const orderData = orderDoc.data()
-    const totalUSD = orderData.totalUSD || 0
-
-    // Sumar amountUSD de todos los abonos históricos del cliente
-    const totalAbonosUSD = await getTotalAbonosByCustomer(customerId)
-    const restanteUSD = totalUSD - totalAbonosUSD
-
-    if (restanteUSD > 0.005) return
-
-    // Settlement: cerrar la orden como pagada normal
-    const invoiceNumber = await nextInvoiceNumber()
-
-    // Obtener la tasa de la sesión activa desde la orden si es posible, o usar la del abono
-    const rate = abonoRate || orderData.paymentRate || 80
-
-    // Recolectar abonos para determinar el breakdown
-    const allAbonos = await getAbonosByCustomer(customerId)
-    // Los abonos vienen ordenados createdAt desc, darles la vuelta para FIFO
-    const sortedAbonos = [...allAbonos].reverse()
-
-    const breakdown = []
-    const seenCurrencies = new Set()
-    for (const a of sortedAbonos) {
-        const cur = a.currency || 'USD'
-        const method = cur === 'USD' ? 'usd_cash' : 'bs_cash'
-        seenCurrencies.add(method)
-        const amountBS = cur === 'USD'
-            ? usdToBs(a.amountUSD || 0, rate)
-            : (a.amount || 0)
-        const existing = breakdown.find(b => b.method === method)
-        if (existing) {
-            existing.amountBS += amountBS
-        } else {
-            breakdown.push({ method, amountBS })
-        }
-    }
-
-    const paymentMethod = seenCurrencies.size > 1 ? 'mixed' : (seenCurrencies.has('usd_cash') ? 'usd_cash' : 'bs_cash')
-
-    const totalBsAtPayment = usdToBs(totalUSD, rate)
-
-    const batch = writeBatch(db)
-    const orderRef = doc(db, 'orders', orderDoc.id)
-
-    batch.update(orderRef, {
-        status: 'paid',
-        mode: 'fast',
-        invoiceNumber,
-        paymentMethod,
-        paymentRate: rate,
-        totalBsAtPayment,
-        updatedAt: serverTimestamp(),
-    })
-
-    // Crear pago en subcol (mismo esquema que saveOrder)
-    const payRef = doc(db, 'orders', orderDoc.id, 'payments', 'p1')
-    const paymentData = {
-        method: paymentMethod,
-        totalUSD,
-        totalBsAtPayment,
-        paymentRate: rate,
-        createdAt: serverTimestamp(),
-    }
-    if (paymentMethod === 'mixed') {
-        paymentData.breakdown = breakdown
-        paymentData.paidBS = totalBsAtPayment
-        paymentData.changeBS = 0
-    } else if (paymentMethod === 'usd_cash') {
-        paymentData.paidBS = totalUSD
-        paymentData.changeBS = 0
-    } else {
-        paymentData.paidBS = totalBsAtPayment
-        paymentData.changeBS = 0
-    }
-    batch.set(payRef, paymentData)
-
-    await batch.commit()
-
-    await updateCustomerStats(customerId, { totalUSD }).catch(() => {})
 }

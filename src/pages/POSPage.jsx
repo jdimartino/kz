@@ -10,7 +10,7 @@ import { useCustomers } from '../hooks/useCustomers'
 import { useOpenOrders } from '../hooks/useOpenOrders'
 import { useMultipleOpenOrderItems } from '../hooks/useOpenOrderItems'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
-import { saveHoldOrder, appendHoldOrder, updateHoldOrder, cancelHoldOrder, getOrderItems, completeHoldOrder } from '../services/orderService'
+import { saveHoldOrder, appendHoldOrder, updateHoldOrder, cancelHoldOrder, getOrderItems } from '../services/orderService'
 import { createCustomer, ensureCustomerByPhone, getCustomerHistory, updateCustomer, addCredit, findCustomerByPhone, findCustomerByName } from '../services/customerService'
 import { addAbono, getAbonosByCustomer, getTotalAbonosByCustomer } from '../services/abonoService'
 import { DEFAULT_USER } from '../context/AuthContext'
@@ -116,21 +116,6 @@ export default function POSPage() {
     useEffect(() => {
         refreshAbonos(null)
     }, [holdOrders])
-
-    // Auto-cerrar órdenes donde los abonos cubren el total
-    useEffect(() => {
-        if (!openAbonosMap || Object.keys(openAbonosMap).length === 0) return
-        const openOrders = holdOrders.filter(o => o.status === 'open')
-        for (const o of openOrders) {
-            const effectiveId = o.customerId || phoneToCustomerId[(o.client?.phone || '').trim()] || null
-            if (!effectiveId) continue
-            const abonado = openAbonosMap[effectiveId] || 0
-            const restante = Math.max(0, (o.totalUSD || 0) - abonado)
-            if (restante <= 0.005) {
-                completeHoldOrder(o.id).catch(() => {})
-            }
-        }
-    }, [openAbonosMap, holdOrders, phoneToCustomerId])
 
     const activeProducts = products.filter(p => p.active)
 
@@ -588,10 +573,7 @@ export default function POSPage() {
                 <main className="flex-1 px-4 pt-3 space-y-4 overflow-auto pb-8">
                     {/* Pestañas abiertas (siempre visibles y filtrables) */}
                     {filteredOpens.length > 0 && (() => {
-                        const totalAbiertas = filteredOpens.reduce((s, o) => {
-                                        const effectiveId = o.id || phoneToCustomerId[o.phone?.trim()] || null
-                                        return s + Math.max(0, o.totalUSD - (effectiveId ? (openAbonosMap[effectiveId] || 0) : 0))
-                                    }, 0)
+                        const totalAbiertas = filteredOpens.reduce((s, o) => s + (o.totalUSD || 0), 0)
                         return (
                         <div>
                             <div className="flex items-center justify-between mb-2">
@@ -601,15 +583,21 @@ export default function POSPage() {
                             <div className="space-y-2">
                                 {filteredOpens.map(o => {
                                             const effectiveId = o.id || phoneToCustomerId[o.phone?.trim()] || null
-                                            const restante = Math.max(0, o.totalUSD - (effectiveId ? (openAbonosMap[effectiveId] || 0) : 0))
-                                    if (restante <= 0) return null
+                                            const abonado = effectiveId ? (openAbonosMap[effectiveId] || 0) : 0
+                                            const restante = Math.max(0, (o.totalUSD || 0) - abonado)
+                                            const credito = Math.max(0, abonado - (o.totalUSD || 0))
                                     return (
                                     <div key={o.orderId} className="bg-green-500/5 border border-green-500/10 rounded-2xl px-4 py-3 flex items-center justify-between">
                                         <button onClick={() => handleSelectClient({ id: o.id, name: o.name, phone: o.phone, orderId: o.orderId })} className="flex-1 text-left">
                                             <p className="text-white font-semibold text-sm">{o.name}</p>
-                                            {openAbonosMap[effectiveId] > 0 && (
+                                            {abonado > 0 && (
                                                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400 border border-green-500/20">
-                                                    💰 Abonado: {formatUSD(openAbonosMap[effectiveId])}
+                                                    💰 Abonado: {formatUSD(abonado)}
+                                                </span>
+                                            )}
+                                            {credito > 0 && (
+                                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/20 ml-1">
+                                                    Crédito: {formatUSD(credito)}
                                                 </span>
                                             )}
                                             <p className="text-slate-400 text-xs">{o.phone}</p>
@@ -617,7 +605,11 @@ export default function POSPage() {
                                         <div className="flex items-center gap-2 shrink-0 ml-2">
                                             <button onClick={(e) => { e.stopPropagation(); handleOpenAbono({ id: o.customerId || null, name: o.name, phone: o.phone, totalUSD: o.totalUSD, orderId: o.orderId }) }} className="text-[10px] font-bold px-2 py-1.5 rounded-lg bg-green-500/15 text-green-400 hover:bg-green-500/25 transition-colors">💰 Abonar</button>
                                             <div className="text-right">
-                                                <p className="text-blue-400 font-extrabold">{formatUSD(restante)}</p>
+                                                {restante > 0 ? (
+                                                    <p className="text-blue-400 font-extrabold">{formatUSD(restante)}</p>
+                                                ) : (
+                                                    <p className="text-green-400 font-extrabold text-[11px]">✓ Cubierto</p>
+                                                )}
                                                 <p className="text-slate-500 text-[10px]">{o.itemCount} ítems</p>
                                             </div>
                                         </div>
@@ -1031,12 +1023,23 @@ export default function POSPage() {
                             </div>
                             <div className="flex items-center justify-between px-4 py-3 bg-white/5">
                                 {clientAbonosUSD > 0 && (
-                                    <p className="text-green-400 text-[10px] font-bold">💰 Abonos previos: -{formatUSD(clientAbonosUSD)}</p>
+                                    <p className="text-green-400 text-[10px] font-bold">💰 Abonos: {formatUSD(clientAbonosUSD)}</p>
                                 )}
                                 <p className="text-white font-bold text-sm">Total</p>
                                 <div className="text-right">
-                                    <p className="text-blue-400 font-extrabold">{formatUSD(Math.max(0, summaryTotal - clientAbonosUSD))}</p>
-                                    {rate && <p className="text-slate-500 text-[10px]">Bs {Math.max(0, summaryTotal - clientAbonosUSD) * rate} <span className={clientAbonosUSD > 0 ? 'line-through text-slate-600' : ''}>{clientAbonosUSD > 0 ? formatUSD(summaryTotal) : ''}</span></p>}
+                                    {summaryTotal > clientAbonosUSD ? (
+                                        <>
+                                            <p className="text-blue-400 font-extrabold">{formatUSD(summaryTotal - clientAbonosUSD)}</p>
+                                            {rate && <p className="text-slate-500 text-[10px]">Bs {(summaryTotal - clientAbonosUSD) * rate}</p>}
+                                        </>
+                                    ) : (
+                                        <>
+                                            <p className="text-green-400 font-extrabold text-[11px]">✓ Cubierto por abonos</p>
+                                            {clientAbonosUSD > summaryTotal && (
+                                                <p className="text-blue-400 text-[10px]">Crédito restante: {formatUSD(clientAbonosUSD - summaryTotal)}</p>
+                                            )}
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -1106,6 +1109,7 @@ export default function POSPage() {
                 }
             }
             dispatch({ type: 'CLEAR_CART' })
+            setPosMode('client')
         } catch (err) {
             console.error(err)
             toast.error('Error al guardar la cuenta. Intenta de nuevo.')
@@ -1237,9 +1241,9 @@ export default function POSPage() {
                         <div className="flex gap-2 mt-1">
                             {isClientMode ? (
                                 <>
-                                    <button onClick={() => { handleSaveTab(); setPosMode('client') }} className="flex-1 bg-slate-700 hover:bg-slate-600 active:scale-[0.98] text-white font-bold py-3 px-3 rounded-xl transition-all text-sm">← Regresar</button>
+                                    <button onClick={handleSaveTab} className="flex-1 bg-slate-700 hover:bg-slate-600 active:scale-[0.98] text-white font-bold py-3 px-3 rounded-xl transition-all text-sm">← Regresar</button>
                                     <button onClick={handleCharge} className="flex-1 bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white font-extrabold py-3 px-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 text-sm">💳 Cobrar {formatUSD(totalUSD)}</button>
-                                    <button onClick={() => { handleSaveTab(); setPosMode('client') }} className="flex-1 bg-slate-600 hover:bg-slate-500 active:scale-[0.98] text-white font-bold py-3 px-3 rounded-xl transition-all text-sm">💾 Guardar</button>
+                                    <button onClick={handleSaveTab} className="flex-1 bg-slate-600 hover:bg-slate-500 active:scale-[0.98] text-white font-bold py-3 px-3 rounded-xl transition-all text-sm">💾 Guardar</button>
                                     <button onClick={handleWhatsApp} className="flex-1 bg-green-600/15 hover:bg-green-600/25 border border-green-500/20 active:scale-[0.98] text-green-400 font-bold py-3 px-3 rounded-xl transition-all text-sm">📱 WhatsApp</button>
                                 </>
                             ) : (

@@ -7,7 +7,7 @@ import { useNav } from '../context/NavigationContext'
 import { saveOrder, nextInvoiceNumber, completeHoldOrder } from '../services/orderService'
 import { formatUSD, formatBs, usdToBs, bsToUsd, calcChange } from '../utils/money'
 import { updateCustomerStats, deductCredit, findCustomerByPhone } from '../services/customerService'
-import { getAbonosByCustomer, consumeCustomerAbonos } from '../services/abonoService'
+import { getAbonosByCustomer, consumePartialAbonos } from '../services/abonoService'
 import { useToast } from '../components/Toast'
 
 const METHODS = [
@@ -196,7 +196,10 @@ export default function TicketPage() {
                 setHoldOrderId(null)
             }
             if (customerId) {
-                await consumeCustomerAbonos(customerId).catch(() => {})
+                const amountToConsume = totalUSD - creditApplied - netTotal
+                if (amountToConsume > 0) {
+                    await consumePartialAbonos(customerId, amountToConsume).catch(() => {})
+                }
             }
             setScreen('success')
         } catch (err) {
@@ -557,9 +560,11 @@ export default function TicketPage() {
                     disabled={!canPay() || saving}
                     className="w-full bg-green-600 hover:bg-green-500 active:scale-[0.98] text-white font-extrabold py-4 px-6 rounded-2xl transition-all shadow-2xl shadow-green-600/30 disabled:opacity-40 disabled:pointer-events-none text-lg"
                 >
-                    {saving ? 'Procesando...' : (creditApplied > 0 || abonosApplied > 0)
-                        ? <><span>✅ Cobrar {formatUSD(netTotal)}</span><br /><span className="text-lg opacity-80">{creditApplied > 0 && `💰 Crédito: -${formatUSD(creditApplied)}`}{creditApplied > 0 && abonosApplied > 0 && ' · '}{abonosApplied > 0 && `💰 Abonos: -${formatUSD(abonosApplied)}`}</span></>
-                        : <><span>✅ Cobrar {formatUSD(totalUSD)}</span><br /><span className="text-lg opacity-80">{formatBs(totalBs)}</span></>
+                    {saving ? 'Procesando...' : netTotal <= 0 && abonosApplied > 0
+                        ? <><span>✅ Cobrar {formatUSD(totalUSD)}</span><br /><span className="text-lg opacity-80">💰 Abonos cubren el total</span></>
+                        : (creditApplied > 0 || abonosApplied > 0)
+                            ? <><span>✅ Cobrar {formatUSD(netTotal)}</span><br /><span className="text-lg opacity-80">{creditApplied > 0 && `💰 Crédito: -${formatUSD(creditApplied)}`}{creditApplied > 0 && abonosApplied > 0 && ' · '}{abonosApplied > 0 && `💰 Abonos: -${formatUSD(Math.min(abonosApplied, totalUSD - creditApplied))}`}</span></>
+                            : <><span>✅ Cobrar {formatUSD(totalUSD)}</span><br /><span className="text-lg opacity-80">{formatBs(totalBs)}</span></>
                     }
                 </button>
             </div>
