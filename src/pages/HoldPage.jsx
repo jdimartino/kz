@@ -166,7 +166,7 @@ export default function HoldPage() {
         const lines = items
             .map(i => `${i.emoji} ${i.name} x${i.qty} — ${formatUSD(i.subtotalUSD)}`)
             .join('\n')
-        const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${order.client?.name}*, aquí el resumen:\n\n${lines}\n\n💵 *Total: ${totalUSDStr}*\n\n*Datos del Pago Movil*\n👤 Rafael Garrido\n📱 04143047502\nV-13536210\n🏦 0102 (Banco de Venezuela)\n\n_La KZ POS by #JDMRules_`
+        const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${order.client?.name}*, aquí el resumen:\n\n${lines}\n\n💵 *Total: ${totalUSDStr}*\n\n*Datos del Pago Movil*\n👤 Rafael Garrido\n📱 04143047502\nCedula  13536210\n🏦 0102 (Banco de Venezuela)\n\n_La KZ POS by #JDMRules_`
         window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank')
     }
 

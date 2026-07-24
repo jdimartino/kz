@@ -949,7 +949,7 @@ export default function POSPage() {
             const lines = displayItems.map(i => `${i.emoji} ${i.name} x${i.qty} — ${formatUSD(i.subtotalUSD)}`).join('\n')
             const nuevoTotal = Math.max(0, summaryTotal - clientAbonosUSD)
             const abonoLine = clientAbonosUSD > 0 ? `\n💰 *Abonos previos: -${formatUSD(clientAbonosUSD)}*\n` : ''
-            const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${selectedClient?.name}*, aquí el resumen:\n\n${lines}${abonoLine}\n💵 *Total a pagar: ${formatUSD(nuevoTotal)}*\n\n*Datos del Pago Movil*\n👤 Rafael Garrido\n📱 04143047502\nV-13536210\n🏦 0102 (Banco de Venezuela)\n\n_La KZ POS by #JDMRules_\nSiguenos en @lakz_ct`
+            const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${selectedClient?.name}*, aquí el resumen:\n\n${lines}${abonoLine}\n💵 *Total a pagar: ${formatUSD(nuevoTotal)}*\n\n*Datos del Pago Movil*\n👤 Rafael Garrido\n📱 04143047502\nCedula  13536210\n🏦 0102 (Banco de Venezuela)\n\n_La KZ POS by #JDMRules_\nSiguenos en @lakz_ct`
             window.open(`https://wa.me/${whatsappPhone}?text=${encodeURIComponent(msg)}`, '_blank')
         }
 
@@ -1121,7 +1121,7 @@ export default function POSPage() {
             const order = holdOrders.find(o => o.id === orderId)
             const phone = client?.phone?.replace(/^0/, '58')
             const lines = orderItems.map(i => `${i.emoji} ${i.name} x${i.qty} — ${formatUSD(i.subtotalUSD)}`).join('\n')
-            const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${client?.name}*, aquí el resumen:\n\n${lines}\n\n💵 *Total: ${formatUSD(order?.totalUSD || totalUSD)}*\n\n*Datos del Pago Movil*\n👤 Rafael Garrido\n📱 04143047502\nV-13536210\n🏦 0102 (Banco de Venezuela)\n\n_La KZ POS by #JDMRules_\nSiguenos en @lakz_ct`
+            const msg = `🍔 *La KZ* — Detalle de tu cuenta\n\nHola *${client?.name}*, aquí el resumen:\n\n${lines}\n\n💵 *Total: ${formatUSD(order?.totalUSD || totalUSD)}*\n\n*Datos del Pago Movil*\n👤 Rafael Garrido\n📱 04143047502\nCedula  13536210\n🏦 0102 (Banco de Venezuela)\n\n_La KZ POS by #JDMRules_\nSiguenos en @lakz_ct`
             window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank')
         } catch (err) {
             console.error(err)
