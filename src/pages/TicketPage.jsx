@@ -148,7 +148,7 @@ export default function TicketPage() {
                 totalUSD,
                 netTotal,
                 creditApplied,
-                abonosApplied,
+                abonosApplied: Math.min(abonosApplied, totalUSD - creditApplied),
                 totalBsAtPayment: netTotalBs,
                 paymentRate: rate,
                 ...(method === 'bs_cash' && {

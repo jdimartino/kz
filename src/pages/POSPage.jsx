@@ -1094,7 +1094,13 @@ export default function POSPage() {
                     ensureCustomerByPhone({ name: client.name, phone: client.phone, notes: client.notes }).catch(() => {})
                 }
             } else {
-                const customerId = client?.id?.length >= 20 ? client.id : null
+                let customerId = client?.id?.length >= 20 ? client.id : null
+                if (!customerId && client?.phone) {
+                    try {
+                        const found = await findCustomerByPhone(client.phone)
+                        if (found) customerId = found.id
+                    } catch {}
+                }
                 const id = await saveHoldOrder({
                     cashierId: DEFAULT_USER.uid,
                     sessionId: session.id,
