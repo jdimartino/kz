@@ -188,6 +188,8 @@ export default function TicketPage() {
                 abonosApplied,
                 payment: { ...payment },
                 invoiceNumber: invoiceNum,
+                clientName: selectedClient?.name || null,
+                clientPhone: selectedClient?.phone || null,
             })
             dispatch({ type: 'CLEAR_CART' })
             setSelectedClient(null)

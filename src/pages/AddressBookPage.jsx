@@ -2,7 +2,7 @@
 // Libreta de Direcciones - Content-only component (rendered inside AdminPage or POSPage wrapper)
 import { useState, useMemo } from 'react'
 import { useAllCustomers } from '../hooks/useAllCustomers'
-import { createCustomer, updateCustomer, deleteCustomer, getCustomerHistory, addCredit, findCustomerByPhone, findCustomerByName } from '../services/customerService'
+import { createCustomer, updateCustomer, deleteCustomer, getCustomerHistory, addCredit } from '../services/customerService'
 import { consumeCustomerAbonos } from '../services/abonoService'
 import { getOrderItems } from '../services/orderService'
 import { formatUSD } from '../utils/money'
@@ -58,22 +58,6 @@ export default function AddressBookPage() {
         const trimmedPhone = newPhone.trim()
 
         try {
-            const existingPhone = await findCustomerByPhone(trimmedPhone)
-            if (existingPhone) {
-                toast.error(`Ya existe un cliente con el teléfono ${trimmedPhone} (${existingPhone.name})`)
-                return
-            }
-            const existingName = await findCustomerByName(trimmedName)
-            if (existingName) {
-                toast.error(`Ya existe un cliente con el nombre "${trimmedName}"`)
-                return
-            }
-        } catch {
-            toast.error('Error al verificar duplicados.')
-            return
-        }
-
-        try {
             await createCustomer({ name: trimmedName, phone: trimmedPhone, notes: newNotes })
             toast.success('Cliente creado correctamente.')
             setNewClientOpen(false)
@@ -100,22 +84,6 @@ export default function AddressBookPage() {
         const trimmedName = editName.trim()
         const trimmedPhone = editPhone.trim()
         const currentId = editClientData.id
-
-        try {
-            const existingPhone = await findCustomerByPhone(trimmedPhone)
-            if (existingPhone && existingPhone.id !== currentId) {
-                toast.error(`Ya existe otro cliente con el teléfono ${trimmedPhone} (${existingPhone.name})`)
-                return
-            }
-            const existingName = await findCustomerByName(trimmedName)
-            if (existingName && existingName.id !== currentId) {
-                toast.error(`Ya existe otro cliente con el nombre "${trimmedName}"`)
-                return
-            }
-        } catch {
-            toast.error('Error al verificar duplicados.')
-            return
-        }
 
         try {
             await updateCustomer(currentId, { name: trimmedName, phone: trimmedPhone, notes: editNotes })

@@ -277,22 +277,6 @@ export default function POSPage() {
             const trimmedName = newName.trim()
             const trimmedPhone = newPhone.trim()
 
-            try {
-                const existingPhone = await findCustomerByPhone(trimmedPhone)
-                if (existingPhone) {
-                    toast.error(`Ya existe un cliente con el teléfono ${trimmedPhone} (${existingPhone.name})`)
-                    return
-                }
-                const existingName = await findCustomerByName(trimmedName)
-                if (existingName) {
-                    toast.error(`Ya existe un cliente con el nombre "${trimmedName}"`)
-                    return
-                }
-            } catch {
-                toast.error('Error al verificar duplicados.')
-                return
-            }
-
             const clientData = {
                 name: trimmedName,
                 phone: trimmedPhone,

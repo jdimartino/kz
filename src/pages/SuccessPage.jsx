@@ -7,6 +7,42 @@ export default function SuccessPage() {
     const { setScreen, lastOrderId, lastOrderData } = useNav()
 
     const pay = lastOrderData?.payment
+    const clientName = lastOrderData?.clientName
+    const clientPhone = lastOrderData?.clientPhone
+
+    const handleWhatsApp = () => {
+        if (!clientPhone) return
+
+        const phone = clientPhone.replace(/^0/, '58')
+
+        const items = lastOrderData?.items || []
+        const lines = items.map(i =>
+            `${i.emoji} ${i.name} x${i.qty} — ${formatUSD(i.subtotalUSD)}`
+        ).join('\n')
+
+        const methodLabels = {
+            bs_cash: 'Efectivo Bs.',
+            transfer: 'Pago Móvil',
+            pos_term: 'Punto de Venta',
+            usd_cash: 'Efectivo USD',
+            mixed: 'Combinado',
+        }
+        const payMethod = methodLabels[pay?.method] || 'N/A'
+
+        const greeting = clientName ? `Hola *${clientName}*,` : 'Hola,'
+
+        const msg =
+            `🍔 *La KZ* — Detalle de tu compra\n\n` +
+            `${greeting} aquí el resumen de tu compra:\n\n` +
+            `*Factura:* #${String(lastOrderData?.invoiceNumber || 0).padStart(4, '0')}\n\n` +
+            `${lines}\n\n` +
+            `*Total: ${formatUSD(lastOrderData?.totalUSD || 0)}*\n` +
+            `*Forma de pago:* ${payMethod}\n\n` +
+            `Gracias por su compra 🎉\n` +
+            `_La KZ POS by #JDMRules_`
+
+        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank')
+    }
 
     return (
         <div className="min-h-screen bg-[#0F172A] flex flex-col items-center justify-start p-6 pt-12 text-center">
@@ -111,10 +147,20 @@ export default function SuccessPage() {
                 </div>
             </div>
 
+            {/* Botón Enviar por WhatsApp */}
+            {clientPhone && (
+                <button
+                    onClick={handleWhatsApp}
+                    className="w-full max-w-sm bg-green-600 hover:bg-green-500 active:scale-[0.98] text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-xl shadow-green-600/30 text-lg"
+                >
+                    📱 Enviar por WhatsApp
+                </button>
+            )}
+
             {/* Botón nueva venta */}
             <button
                 onClick={() => setScreen('pos')}
-                className="w-full max-w-sm bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-xl shadow-blue-600/30 text-lg"
+                className="w-full max-w-sm bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-xl shadow-blue-600/30 text-lg mt-3"
             >
                 <LogoIcon className="inline-block w-5 h-5 mr-1 align-middle" /> Nueva Venta
             </button>
