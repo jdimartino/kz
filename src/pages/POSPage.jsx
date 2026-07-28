@@ -1038,6 +1038,7 @@ export default function POSPage() {
                              if (selectedClient?.orderId && displayItems.length > 0) {
                                  try { await updateHoldOrder(selectedClient.orderId, displayItems) } catch {}
                              }
+                             setSearch('')
                              setPosMode('client')
                          }} className="flex-1 bg-slate-600 hover:bg-slate-500 active:scale-[0.98] text-white font-bold py-3 px-3 rounded-xl transition-all text-sm">💾 Guardar</button>
                         <button onClick={handleGoToProducts} className="flex-1 bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white font-extrabold py-3 px-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 text-sm">➕ Agregar</button>
@@ -1099,6 +1100,7 @@ export default function POSPage() {
                 }
             }
             dispatch({ type: 'CLEAR_CART' })
+            setSearch('')
             setPosMode('client')
         } catch (err) {
             console.error(err)
