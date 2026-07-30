@@ -4,13 +4,13 @@ import { useCart } from '../context/CartContext'
 import { useSession } from '../context/SessionContext'
 import { DEFAULT_USER } from '../context/AuthContext'
 import { useNav } from '../context/NavigationContext'
-import { saveOrder, nextInvoiceNumber, completeHoldOrder } from '../services/orderService'
+import { saveOrder, saveHoldOrder, nextInvoiceNumber, completeHoldOrder } from '../services/orderService'
 import { formatUSD, formatBs, usdToBs, bsToUsd, calcChange } from '../utils/money'
 import { updateCustomerStats, deductCredit, findCustomerByPhone } from '../services/customerService'
-import { getAbonosByCustomer, consumePartialAbonos } from '../services/abonoService'
+import { addAbono, getAbonosByCustomer, consumePartialAbonos } from '../services/abonoService'
 import { useToast } from '../components/Toast'
 
-const METHODS = [
+const BASE_METHODS = [
     { id: 'bs_cash', label: 'Efectivo Bs.', icon: '💴' },
     { id: 'transfer', label: 'Pago Móvil', icon: '📲' },
     { id: 'pos_term', label: 'Punto de Venta', icon: '💳' },
@@ -42,6 +42,8 @@ export default function TicketPage() {
     const [creditBalance, setCreditBalance] = useState(0)
     const [creditApplied, setCreditApplied] = useState(0)
     const [abonosApplied, setAbonosApplied] = useState(0)
+    const [abonoAmount, setAbonoAmount] = useState('')
+    const [abonoCurrency, setAbonoCurrency] = useState('USD')
 
     useEffect(() => {
         nextInvoiceNumber().then(setInvoiceNum).catch(() => {})
@@ -78,7 +80,26 @@ export default function TicketPage() {
         if (method !== 'mixed') {
             setMixedPayments([])
         }
+        if (method !== 'abono') {
+            setAbonoAmount('')
+            setAbonoCurrency('USD')
+        }
     }, [method])
+
+    const methods = useMemo(() => {
+        const list = [...BASE_METHODS]
+        if (selectedClient?.id && selectedClient.id.length >= 20) {
+            list.push({ id: 'abono', label: 'Abonar a Cuenta', icon: '💰' })
+        }
+        return list
+    }, [selectedClient?.id])
+
+    useEffect(() => {
+        const ids = methods.map(m => m.id)
+        if (!ids.includes(method)) {
+            setMethod('transfer')
+        }
+    }, [methods])
 
     const totalBs = rate ? usdToBs(totalUSD, rate) : 0
     const netTotal = Math.max(0, totalUSD - creditApplied - abonosApplied)
@@ -126,6 +147,9 @@ export default function TicketPage() {
     const canPay = useCallback(() => {
         if (!session?.id) return false
         if (!rate) return false
+        if (method === 'abono') {
+            return !!selectedClient?.id && parseFloat(abonoAmount) > 0
+        }
         if (netTotal <= 0) return true
         if (method === 'bs_cash') return true
         if (method === 'usd_cash') return parseFloat(paidBS) >= netTotal
@@ -133,7 +157,7 @@ export default function TicketPage() {
         if (method === 'transfer') return true
         if (method === 'mixed') return !!mixedRemaining?.covered
         return false
-    }, [session?.id, method, paidBS, netTotalBs, netTotal, mixedRemaining, rate])
+    }, [session?.id, method, paidBS, netTotalBs, netTotal, mixedRemaining, rate, selectedClient?.id, abonoAmount])
 
     const handlePay = async () => {
         if (!canPay()) return
@@ -143,6 +167,41 @@ export default function TicketPage() {
         }
         setSaving(true)
         try {
+            if (method === 'abono') {
+                const amount = parseFloat(abonoAmount)
+                if (amount <= 0) {
+                    toast.error('Ingresa un monto válido.')
+                    setSaving(false)
+                    return
+                }
+                let targetOrderId = holdOrderId
+                if (!targetOrderId) {
+                    targetOrderId = await saveHoldOrder({
+                        cashierId: DEFAULT_USER.uid,
+                        sessionId: session.id,
+                        items,
+                        client: { name: selectedClient.name, phone: selectedClient.phone || '' },
+                        notes: '',
+                        customerId: selectedClient.id,
+                    })
+                }
+                await addAbono({
+                    customerId: selectedClient.id,
+                    customerName: selectedClient.name,
+                    amountEntered: amount,
+                    currency: abonoCurrency,
+                    exchangeRateUsed: abonoCurrency === 'BS' ? rate : null,
+                    orderId: targetOrderId,
+                })
+                toast.success(`${abonoCurrency === 'USD' ? '$' : 'Bs'}${amount.toFixed(2)} abonados a la cuenta de ${selectedClient.name}`)
+                dispatch({ type: 'CLEAR_CART' })
+                setSelectedClient(null)
+                setHoldOrderId(null)
+                setAbonoAmount('')
+                setAbonoCurrency('USD')
+                setScreen('pos')
+                return
+            }
             const payment = {
                 method,
                 totalUSD,
@@ -357,7 +416,7 @@ export default function TicketPage() {
                 <fieldset>
                     <legend className="label-xs mb-2">Método de Pago</legend>
                     <div className="grid grid-cols-2 gap-2">
-                        {METHODS.map(m => (
+                        {methods.map(m => (
                             <button
                                 key={m.id}
                                 onClick={() => setMethod(m.id)}
@@ -542,6 +601,55 @@ export default function TicketPage() {
                         />
                     </div>
                 )}
+
+                {/* Abonar a Cuenta */}
+                {method === 'abono' && selectedClient && (
+                    <div className="bg-[#1E293B] rounded-2xl p-4 space-y-4 border border-white/5">
+                        <div>
+                            <p className="text-white font-bold text-sm">💰 Abonar a Cuenta</p>
+                            <p className="text-slate-400 text-xs mt-1">Cliente: <span className="text-white font-semibold">{selectedClient.name}</span></p>
+                        </div>
+                        <div>
+                            <label className="label-xs">Abonar en</label>
+                            <div className="flex gap-2 mt-1">
+                                <button
+                                    onClick={() => setAbonoCurrency('USD')}
+                                    className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition-all ${abonoCurrency === 'USD' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+                                >
+                                    💵 USD
+                                </button>
+                                <button
+                                    onClick={() => setAbonoCurrency('BS')}
+                                    className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition-all ${abonoCurrency === 'BS' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+                                >
+                                    💴 Bs
+                                </button>
+                            </div>
+                            {abonoCurrency === 'BS' && rate && (
+                                <p className="text-slate-400 text-[10px] mt-1">Tasa fija (Bs por $): {rate.toFixed(2)}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="label-xs">Monto del abono {abonoCurrency === 'USD' ? '(USD)' : '(Bs)'}</label>
+                            <div className="relative mt-1">
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">{abonoCurrency === 'USD' ? '$' : 'Bs'}</span>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0.01"
+                                    value={abonoAmount}
+                                    onChange={e => setAbonoAmount(e.target.value)}
+                                    className="input-field pl-12"
+                                    placeholder="0.00"
+                                    autoFocus
+                                />
+                            </div>
+                            {abonoCurrency === 'BS' && rate && abonoAmount && (
+                                <p className="text-slate-500 text-[10px] mt-1">≈ {formatUSD(parseFloat(abonoAmount || '0') / rate)}</p>
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Botón Regresar (abajo) */}
@@ -560,9 +668,14 @@ export default function TicketPage() {
                 <button
                     onClick={handlePay}
                     disabled={!canPay() || saving}
-                    className="w-full bg-green-600 hover:bg-green-500 active:scale-[0.98] text-white font-extrabold py-4 px-6 rounded-2xl transition-all shadow-2xl shadow-green-600/30 disabled:opacity-40 disabled:pointer-events-none text-lg"
+                    className={`w-full active:scale-[0.98] text-white font-extrabold py-4 px-6 rounded-2xl transition-all shadow-2xl disabled:opacity-40 disabled:pointer-events-none text-lg ${method === 'abono'
+                        ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/30'
+                        : 'bg-green-600 hover:bg-green-500 shadow-green-600/30'
+                    }`}
                 >
-                    {saving ? 'Procesando...' : netTotal <= 0 && abonosApplied > 0
+                    {saving ? 'Procesando...' : method === 'abono'
+                        ? <><span>💰 Abonar {abonoCurrency === 'USD' ? formatUSD(parseFloat(abonoAmount || 0)) : formatBs(parseFloat(abonoAmount || 0))}</span><br /><span className="text-lg opacity-80">a {selectedClient?.name}</span></>
+                        : netTotal <= 0 && abonosApplied > 0
                         ? <><span>✅ Cobrar {formatUSD(totalUSD)}</span><br /><span className="text-lg opacity-80">💰 Abonos cubren el total</span></>
                         : (creditApplied > 0 || abonosApplied > 0)
                             ? <><span>✅ Cobrar {formatUSD(netTotal)}</span><br /><span className="text-lg opacity-80">{creditApplied > 0 && `💰 Crédito: -${formatUSD(creditApplied)}`}{creditApplied > 0 && abonosApplied > 0 && ' · '}{abonosApplied > 0 && `💰 Abonos: -${formatUSD(Math.min(abonosApplied, totalUSD - creditApplied))}`}</span></>

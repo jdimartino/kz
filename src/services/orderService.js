@@ -2,7 +2,8 @@
 import {
     collection, doc, updateDoc, deleteDoc,
     serverTimestamp, query, where, getDocs,
-    writeBatch, runTransaction,
+    writeBatch, runTransaction, increment,
+    getDoc, setDoc,
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { findCustomerByPhone } from './customerService'
@@ -22,27 +23,9 @@ function mergeLogs(firestoreLog, cartLog) {
  */
 export async function nextInvoiceNumber() {
     const counterRef = doc(db, 'counters', 'invoices')
-    const maxRetries = 10
-    let attempt = 0
-    while (attempt < maxRetries) {
-        try {
-            return await runTransaction(db, async (tx) => {
-                const snap = await tx.get(counterRef)
-                const next = (snap.exists() ? snap.data().current : 0) + 1
-                tx.set(counterRef, { current: next }, { merge: true })
-                return next
-            })
-        } catch (err) {
-            if (err.name === 'FirebaseError' && err.code === 'failed-precondition') {
-                attempt++
-                const backoff = Math.min(100 * Math.pow(2, attempt), 1000)
-                await new Promise(resolve => setTimeout(resolve, backoff))
-                continue
-            }
-            throw err
-        }
-    }
-    throw new Error('No se pudo obtener el número de factura después de varios intentos.')
+    await setDoc(counterRef, { current: increment(1) }, { merge: true })
+    const snap = await getDoc(counterRef)
+    return snap.data().current
 }
 
 /**

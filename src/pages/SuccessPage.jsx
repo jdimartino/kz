@@ -34,7 +34,7 @@ export default function SuccessPage() {
         const msg =
             `🍔 *La KZ* — Detalle de tu compra\n\n` +
             `${greeting} aquí el resumen de tu compra:\n\n` +
-            `*Factura:* #${String(lastOrderData?.invoiceNumber || 0).padStart(4, '0')}\n\n` +
+            `*Ticket:* #${String(lastOrderData?.invoiceNumber || 0).padStart(4, '0')}\n\n` +
             `${lines}\n\n` +
             `*Total: ${formatUSD(lastOrderData?.totalUSD || 0)}*\n` +
             `*Forma de pago:* ${payMethod}\n\n` +
@@ -62,7 +62,7 @@ export default function SuccessPage() {
             {/* Detalles de la orden */}
             <div className="bg-[#1E293B] rounded-2xl w-full max-w-sm p-5 text-left space-y-4 mb-8 border border-white/5">
                 <div className="flex justify-between items-center text-xs">
-                    <p className="text-slate-400 font-bold uppercase tracking-wider">N° de Factura</p>
+                    <p className="text-slate-400 font-bold uppercase tracking-wider">N° de Ticket</p>
                     <p className="text-white font-extrabold text-sm">
                         {lastOrderData?.invoiceNumber != null ? `#${String(lastOrderData.invoiceNumber).padStart(4, '0')}` : '—'}
                     </p>
