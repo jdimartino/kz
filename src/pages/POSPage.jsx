@@ -40,6 +40,7 @@ export default function POSPage() {
     const toast = useToast()
 
     const [posMode, setPosMode] = useState('select')
+    const [selectedGroup, setSelectedGroup] = useState(null)
     const [search, setSearch] = useState('')
     const [newClientOpen, setNewClientOpen] = useState(false)
     const [newName, setNewName] = useState('')
@@ -189,7 +190,7 @@ export default function POSPage() {
                 </header>
                 <main className="flex-1 flex flex-col items-center justify-start px-6 pt-6 gap-6">
                     <button
-                        onClick={() => { setPosMode('client'); dispatch({ type: 'CLEAR_CART' }); setSelectedClient(null) }}
+                        onClick={() => { setPosMode('client'); dispatch({ type: 'CLEAR_CART' }); setSelectedClient(null); setSelectedGroup(null) }}
                         className="w-full max-w-sm bg-[#1E293B] hover:bg-[#2a3649] border border-white/10 rounded-3xl p-8 text-center transition-all active:scale-[0.98]"
                     >
                         <span className="text-5xl block mb-4">🍽️</span>
@@ -197,7 +198,7 @@ export default function POSPage() {
                         <p className="text-slate-400 text-sm">Restaurante / Pestañas</p>
                     </button>
                     <button
-                        onClick={() => { setPosMode('quick-products'); dispatch({ type: 'CLEAR_CART' }); setSelectedClient(null) }}
+                        onClick={() => { setPosMode('quick-products'); dispatch({ type: 'CLEAR_CART' }); setSelectedClient(null); setSelectedGroup(null) }}
                         className="w-full max-w-sm bg-[#1E293B] hover:bg-[#2a3649] border border-white/10 rounded-3xl p-8 text-center transition-all active:scale-[0.98]"
                     >
                         <span className="text-5xl block mb-4">⚡</span>
@@ -557,7 +558,14 @@ export default function POSPage() {
                 <main className="flex-1 px-4 pt-3 space-y-4 overflow-auto pb-8">
                     {/* Pestañas abiertas (siempre visibles y filtrables) */}
                     {filteredOpens.length > 0 && (() => {
-                        const totalAbiertas = filteredOpens.reduce((s, o) => s + (o.totalUSD || 0), 0)
+                        const withAbonos = (o) => {
+                            const effectiveId = o.id || phoneToCustomerId[o.phone?.trim()] || null
+                            const abonado = effectiveId ? (openAbonosMap[effectiveId] || 0) : 0
+                            const restante = Math.max(0, (o.totalUSD || 0) - abonado)
+                            const credito = Math.max(0, abonado - (o.totalUSD || 0))
+                            return { abonado, restante, credito }
+                        }
+                        const totalAbiertas = filteredOpens.reduce((s, o) => s + withAbonos(o).restante, 0)
                         return (
                         <div>
                             <div className="flex items-center justify-between mb-2">
@@ -566,10 +574,7 @@ export default function POSPage() {
                             </div>
                             <div className="space-y-2">
                                 {filteredOpens.map(o => {
-                                            const effectiveId = o.id || phoneToCustomerId[o.phone?.trim()] || null
-                                            const abonado = effectiveId ? (openAbonosMap[effectiveId] || 0) : 0
-                                            const restante = Math.max(0, (o.totalUSD || 0) - abonado)
-                                            const credito = Math.max(0, abonado - (o.totalUSD || 0))
+                                            const { abonado, restante, credito } = withAbonos(o)
                                     return (
                                     <div key={o.orderId} className="bg-green-500/5 border border-green-500/10 rounded-2xl px-4 py-3 flex items-center justify-between">
                                         <button onClick={() => handleSelectClient({ id: o.id, name: o.name, phone: o.phone, orderId: o.orderId })} className="flex-1 text-left">
@@ -1167,34 +1172,60 @@ export default function POSPage() {
                         <p className="font-semibold">Sin productos</p>
                         {products.length === 0 ? <p className="text-sm mt-1">El Admin debe cargar el menú primero</p> : <p className="text-sm mt-1">No hay productos activos</p>}
                     </div>
+                ) : selectedGroup === null ? (
+                    <div>
+                        <p className="text-slate-500 text-xs mb-4">Elegí un grupo para ver sus productos</p>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                            {groupedProducts.map(([category, catProducts]) => {
+                                const catDef = categories.find(c => c.name === category)
+                                const color = getCategoryColor(catDef?.color)
+                                return (
+                                    <button
+                                        key={category}
+                                        onClick={() => setSelectedGroup(category)}
+                                        className={`${color.bg} ${color.border} rounded-2xl p-4 flex flex-col items-center justify-center border transition-all active:scale-[0.97] hover:bg-opacity-20 cursor-pointer`}
+                                    >
+                                        <div className={`w-12 h-12 rounded-full ${color.swatch} border border-white/10 mb-3 flex items-center justify-center text-2xl shadow-lg`}>
+                                            <span>{catProducts[0]?.emoji || '🗂️'}</span>
+                                        </div>
+                                        <p className={`${color.text} font-bold text-sm text-center leading-tight mb-1`}>{category}</p>
+                                        <span className="text-slate-500 text-[11px]">{catProducts.length} producto{catProducts.length !== 1 ? 's' : ''}</span>
+                                    </button>
+                                )
+                            })}
+                        </div>
+                    </div>
                 ) : (
-                    <div className="space-y-6">
-                        {groupedProducts.map(([category, catProducts]) => {
-                            const catDef = categories.find(c => c.name === category)
-                            const color = getCategoryColor(catDef?.color)
-                            return (
-                                <div key={category}>
-                                    <div className="flex items-center gap-2 mb-3">
+                    (() => {
+                        const [category, catProducts] = groupedProducts.find(([c]) => c === selectedGroup) || []
+                        if (!category) return null
+                        const catDef = categories.find(c => c.name === category)
+                        const color = getCategoryColor(catDef?.color)
+                        return (
+                            <div>
+                                <div className="flex items-center gap-3 mb-4">
+                                    <button onClick={() => setSelectedGroup(null)} className="flex items-center gap-1 bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-bold text-xs px-3 py-2 rounded-xl transition-all">← Grupos</button>
+                                    <div className="flex items-center gap-2">
                                         <div className={`w-3 h-3 rounded-full ${color.swatch}`} />
                                         <h3 className={`text-xs font-bold uppercase tracking-wider ${color.text}`}>{category}</h3>
                                         <span className="text-slate-600 text-[11px]">({catProducts.length})</span>
                                     </div>
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                                        {catProducts.map(product => (
-                                            <ProductCard
-                                                key={product.id}
-                                                product={product}
-                                                qty={items.find(i => i.productId === product.id)?.qty || 0}
-                                                onAdd={() => dispatch({ type: 'ADD_ITEM', payload: product })}
-                                                onRemove={() => dispatch({ type: 'DECREMENT_ITEM', payload: product.id })}
-                                                categoryColor={color}
-                                            />
-                                        ))}
-                                    </div>
                                 </div>
-                            )
-                        })}
-                    </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                                    {catProducts.map(product => (
+                                        <ProductCard
+                                            key={product.id}
+                                            product={product}
+                                            qty={items.find(i => i.productId === product.id)?.qty || 0}
+                                            onAdd={() => dispatch({ type: 'ADD_ITEM', payload: product })}
+                                            onRemove={() => dispatch({ type: 'DECREMENT_ITEM', payload: product.id })}
+                                            categoryColor={color}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )
+                    })()
                 )}
             </main>
 
